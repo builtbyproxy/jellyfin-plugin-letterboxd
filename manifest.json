@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.2.0.0",
+        "changelog": "Star ratings in reviews, rewatch date picker, Cloudflare retry on reviews, better error display, sync history persistence fix",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/releases/download/v1.2.0/jellyfin-plugin-letterboxd-v1.2.0.zip",
+        "checksum": "b57832a58c8592ab54b508f2f56af89d",
+        "timestamp": "2026-03-26T00:00:00Z"
+      },
+      {
         "version": "1.1.0.0",
         "changelog": "Dashboard with sync history, watchlist sync, diary import, reviews, Cloudflare backoff, rating sync, rewatch detection",
         "targetAbi": "10.11.0.0",
