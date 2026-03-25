@@ -113,7 +113,7 @@ public class SyncTask : IScheduledTask
                 try
                 {
                     var film = await client.LookupFilmByTmdbIdAsync(tmdbId).ConfigureAwait(false);
-                    await Task.Delay(1000 + Random.Shared.Next(1000), cancellationToken).ConfigureAwait(false);
+                    await Task.Delay(3000 + Random.Shared.Next(2000), cancellationToken).ConfigureAwait(false);
 
                     var userData = _userDataManager.GetUserData(user, movie);
                     var viewingDate = userData?.LastPlayedDate?.Date ?? DateTime.Now.Date;

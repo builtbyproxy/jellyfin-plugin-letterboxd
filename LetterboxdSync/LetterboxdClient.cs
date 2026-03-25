@@ -224,7 +224,7 @@ public class LetterboxdClient : IDisposable
 
     public async Task<FilmResult> LookupFilmByTmdbIdAsync(int tmdbId)
     {
-        await Task.Delay(500 + Random.Shared.Next(500)).ConfigureAwait(false);
+        await Task.Delay(3000 + Random.Shared.Next(2000)).ConfigureAwait(false);
 
         using var req = new HttpRequestMessage(HttpMethod.Get, $"/tmdb/{tmdbId}");
         SetNavHeaders(req.Headers, "same-origin");
