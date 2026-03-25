@@ -37,7 +37,14 @@ public static class SyncHistory
     {
         get
         {
-            var pluginDir = Plugin.Instance?.DataFolderPath ?? string.Empty;
+            var pluginDir = Plugin.Instance?.DataFolderPath;
+            if (string.IsNullOrEmpty(pluginDir))
+            {
+                // Fallback: store next to the plugin config
+                pluginDir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "jellyfin", "plugins", "LetterboxdSync");
+            }
             return Path.Combine(pluginDir, "sync-history.json");
         }
     }
@@ -65,14 +72,20 @@ public static class SyncHistory
     {
         try
         {
-            var dir = Path.GetDirectoryName(DataPath);
+            var path = DataPath;
+            Console.WriteLine($"[LetterboxdSync] Saving sync history to: {path}");
+            var dir = Path.GetDirectoryName(path);
             if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
                 Directory.CreateDirectory(dir);
 
             var json = JsonSerializer.Serialize(_events, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(DataPath, json);
+            File.WriteAllText(path, json);
+            Console.WriteLine($"[LetterboxdSync] Saved {_events?.Count ?? 0} events to sync history");
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[LetterboxdSync] Failed to save sync history: {ex.Message}");
+        }
     }
 
     public static void Record(SyncEvent evt)

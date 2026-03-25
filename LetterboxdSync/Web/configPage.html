@@ -255,13 +255,18 @@
                                 }
                                 events.forEach(function (e) {
                                     var tr = document.createElement('tr');
-                                    var sc = e.Status === 0 ? '#00e054' : e.Status === 1 ? '' : e.Status === 2 ? '#e74c3c' : '#40bcf4';
-                                    var st = e.Status === 0 ? 'Synced' : e.Status === 1 ? 'Skipped' : e.Status === 2 ? 'Failed' : 'Rewatch';
+                                    // Handle both integer and string enum values
+                                    var s = typeof e.Status === 'string' ? e.Status : ['Success','Skipped','Failed','Rewatch'][e.Status] || 'Unknown';
+                                    var statusMap = { Success: {color:'#00e054', label:'Synced'}, Skipped: {color:'', label:'Skipped'}, Failed: {color:'#e74c3c', label:'Failed'}, Rewatch: {color:'#40bcf4', label:'Rewatch'} };
+                                    var sm = statusMap[s] || {color:'', label:s};
+                                    var sc = sm.color;
+                                    var st = sm.label;
                                     var link = e.FilmSlug ? '<a href="https://letterboxd.com/film/' + e.FilmSlug + '/" target="_blank" class="lb-link">' + e.FilmTitle + '</a>' : e.FilmTitle;
                                     var ts = new Date(e.Timestamp);
                                     var time = ts.toLocaleDateString() + ' ' + ts.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-                                    var btn = (e.FilmSlug && (e.Status === 0 || e.Status === 3)) ? '<button type="button" onclick="LB.openReview(\'' + e.FilmSlug + '\',\'' + e.FilmTitle.replace(/'/g, "\\'") + '\')" class="lb-btn lb-btn-review">Review</button>' : '';
-                                    var err = e.Status === 2 && e.Error ? ' title="' + e.Error.replace(/"/g, '&quot;') + '"' : '';
+                                    var canReview = (s === 'Success' || s === 'Rewatch');
+                                    var btn = (e.FilmSlug && canReview) ? '<button type="button" onclick="LB.openReview(\'' + e.FilmSlug + '\',\'' + e.FilmTitle.replace(/'/g, "\\'") + '\')" class="lb-btn lb-btn-review">Review</button>' : '';
+                                    var err = s === 'Failed' && e.Error ? ' title="' + e.Error.replace(/"/g, '&quot;') + '"' : '';
                                     var scStyle = sc ? ' style="color:' + sc + ';"' : ' class="c-muted"';
                                     tr.innerHTML = '<td style="padding:0.5em;">' + link + '</td>'
                                         + '<td style="padding:0.5em;"><span' + scStyle + err + '>' + st + '</span></td>'
