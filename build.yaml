@@ -1,0 +1,22 @@
+---
+name: "LetterboxdSync"
+guid: "c7a3e1b9-5d42-4f8a-9c06-2b7d8e4f1a35"
+version: 1
+targetAbi: "10.11.0.0"
+framework: "net9.0"
+owner: "builtbyproxy"
+overview: "Real-time Letterboxd diary sync with duplicate detection"
+description: >
+  Automatically syncs your Jellyfin watch history to your Letterboxd diary.
+  Supports multiple users, real-time sync, duplicate detection, and retry with backoff.
+category: "General"
+artifacts:
+  - "LetterboxdSync.dll"
+  - "HtmlAgilityPack.dll"
+changelog: |-
+  - Initial release: real-time playback sync, daily scheduled catch-up
+  - Multi-user support with per-user Letterboxd accounts
+  - TMDb-based film matching (no more title slug 404s)
+  - Duplicate diary detection before logging
+  - Retry with exponential backoff on transient errors
+  - Raw cookie support for Cloudflare bypass

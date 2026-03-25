@@ -1,0 +1,19 @@
+[
+  {
+    "guid": "c7a3e1b9-5d42-4f8a-9c06-2b7d8e4f1a35",
+    "name": "LetterboxdSync",
+    "overview": "Real-time Letterboxd diary sync with duplicate detection",
+    "description": "Automatically syncs your Jellyfin watch history to your Letterboxd diary. Supports multiple users, real-time sync on playback completion, duplicate detection, retry with backoff, and TMDb-based film matching.",
+    "owner": "builtbyproxy",
+    "category": "General",
+    "versions": [
+      {
+        "version": "1.0.0.0",
+        "changelog": "Initial release: real-time sync, scheduled catch-up, multi-user, duplicate detection, retry with backoff",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "",
+        "timestamp": "2026-03-25T00:00:00Z"
+      }
+    ]
+  }
+]
