@@ -37,12 +37,22 @@ public static class SyncHistory
     {
         get
         {
-            // Store next to the plugin DLL — this directory persists across restarts
+            // Store in the configurations directory — survives version upgrades
+            // This is where LetterboxdSync.xml lives: /config/data/plugins/configurations/
             var assembly = typeof(SyncHistory).Assembly.Location;
             var pluginDir = Path.GetDirectoryName(assembly);
-            if (string.IsNullOrEmpty(pluginDir))
-                pluginDir = Plugin.Instance?.DataFolderPath ?? string.Empty;
-            return Path.Combine(pluginDir, "sync-history.json");
+            if (!string.IsNullOrEmpty(pluginDir))
+            {
+                var configDir = Path.Combine(pluginDir, "..", "configurations");
+                if (Directory.Exists(configDir))
+                    return Path.Combine(configDir, "letterboxd-sync-history.json");
+            }
+
+            // Fallback: next to the DLL
+            if (!string.IsNullOrEmpty(pluginDir))
+                return Path.Combine(pluginDir, "sync-history.json");
+
+            return "sync-history.json";
         }
     }
 
