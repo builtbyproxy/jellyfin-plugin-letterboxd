@@ -11,7 +11,8 @@
         "version": "1.0.0.0",
         "changelog": "Initial release: real-time sync, scheduled catch-up, multi-user, duplicate detection, retry with backoff",
         "targetAbi": "10.11.0.0",
-        "sourceUrl": "",
+        "sourceUrl": "https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/releases/download/v1.0.0/jellyfin-plugin-letterboxd-v1.0.0.zip",
+        "checksum": "a7051032812f841542d03ccbd0bfe35a",
         "timestamp": "2026-03-25T00:00:00Z"
       }
     ]
