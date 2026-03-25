@@ -1,36 +1,78 @@
-# Jellyfin Letterboxd Sync Plugin
+# Jellyfin Letterboxd Sync
 
-A Jellyfin plugin that automatically syncs your watch history to your Letterboxd diary. Films are logged in real-time when you finish watching, with a daily scheduled task as a safety net.
+Automatically sync your Jellyfin watch history to your Letterboxd diary. Films are logged in real-time when you finish watching, with a daily scheduled sync as a safety net.
 
 ## Features
 
-- **Real-time sync** — logs films to your Letterboxd diary the moment you finish watching
-- **Daily catch-up sync** — scheduled task picks up anything the real-time handler missed
-- **Multi-user support** — map multiple Jellyfin users to their own Letterboxd accounts
-- **TMDb-based matching** — looks up films by TMDb ID, not title slugs, so foreign titles and special characters work correctly
-- **Duplicate detection** — checks your Letterboxd diary before logging to avoid duplicate entries
-- **Retry with backoff** — retries up to 3 times with exponential backoff on transient errors (expired CSRF tokens, rate limiting)
-- **Favorites sync** — optionally marks films as "liked" on Letterboxd based on your Jellyfin favorites
-- **Date filtering** — optionally limit the catch-up sync to only recently played films
-- **Cloudflare bypass** — supports raw cookie injection when Cloudflare blocks automated login
+- **Real-time sync** — films are logged to your diary the moment you finish watching
+- **Daily catch-up** — a scheduled task picks up anything missed by the real-time sync
+- **Multi-user** — each Jellyfin user can link their own Letterboxd account
+- **TMDb matching** — films are matched by TMDb ID, so foreign titles and special characters just work
+- **Duplicate detection** — won't log the same film twice on the same day
+- **Retry with backoff** — handles transient Letterboxd errors gracefully
+- **Favorites** — optionally sync Jellyfin favorites as Letterboxd likes
+- **Date filtering** — limit the catch-up sync to recently watched films
+
+Uses Letterboxd's current JSON API (`/api/v0/production-log-entries`).
+
+## Install
+
+### Plugin repository (recommended)
+
+1. In Jellyfin, go to **Dashboard > Plugins > Repositories**
+2. Add a new repository:
+   - **Name:** `LetterboxdSync`
+   - **URL:** `https://raw.githubusercontent.com/builtbyproxy/jellyfin-plugin-letterboxd/main/manifest.json`
+3. Go to **Catalog**, find **LetterboxdSync**, and click **Install**
+4. Restart Jellyfin
+
+### Manual install
+
+1. Download the latest ZIP from [Releases](https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/releases)
+2. Extract `LetterboxdSync.dll` and `HtmlAgilityPack.dll` to:
+   ```
+   <jellyfin-data>/plugins/LetterboxdSync_1.0.0.0/
+   ```
+3. Restart Jellyfin
+
+## Setup
+
+1. Go to **Dashboard > Plugins > Letterboxd Sync**
+2. Click **Add Account**
+3. Select your Jellyfin user, enter your Letterboxd username and password
+4. Check **Enabled**
+5. Click **Save**
+
+That's it. Watch a movie and check your Letterboxd diary.
+
+### Settings
+
+| Setting | Default | Description |
+|---|---|---|
+| **Enabled** | Off | Must be checked for this account to sync |
+| **Sync favorites as liked** | Off | Marks films as "liked" on Letterboxd if they're favorited in Jellyfin |
+| **Only sync recently played** | Off | When enabled, the daily catch-up only looks at films played in the last N days |
+| **Days to look back** | 7 | How far back the catch-up sync goes (only applies when date filtering is on) |
+| **Raw Cookies** | Empty | For Cloudflare bypass — see below |
+
+### Cloudflare issues
+
+If your Letterboxd login fails with a 403 error, Cloudflare is blocking the request. To fix this:
+
+1. Log into Letterboxd in your browser
+2. Open DevTools (F12) > Network tab
+3. Reload the page and click any request to `letterboxd.com`
+4. Copy the full **Cookie** header value
+5. Paste it into the **Raw Cookies** field in the plugin config
+
+The key cookie is `cf_clearance`. It expires periodically, so you may need to refresh it.
 
 ## Requirements
 
 - Jellyfin 10.11+
 - A Letterboxd account
 
-## Installation
-
-### From release
-
-1. Download the latest release ZIP from the [releases page](https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/releases)
-2. Extract `LetterboxdSync.dll` and `HtmlAgilityPack.dll` into your Jellyfin plugins directory:
-   ```
-   <jellyfin-data>/plugins/LetterboxdSync_1.0.0.0/
-   ```
-3. Restart Jellyfin
-
-### Build from source
+## Building from source
 
 ```bash
 git clone https://github.com/builtbyproxy/jellyfin-plugin-letterboxd.git
@@ -38,56 +80,7 @@ cd jellyfin-plugin-letterboxd
 dotnet build -c Release
 ```
 
-The built DLLs will be in `LetterboxdSync/bin/Release/net9.0/`. Copy `LetterboxdSync.dll` and `HtmlAgilityPack.dll` to your plugins directory.
-
-## Configuration
-
-After installation, go to **Dashboard > Plugins > Letterboxd Sync** in Jellyfin.
-
-For each user you want to sync:
-
-1. Click **Add Account**
-2. Select the Jellyfin user from the dropdown
-3. Enter their Letterboxd username and password
-4. Enable the account
-5. Click **Save**
-
-### Optional settings per account
-
-| Setting | Description |
-|---|---|
-| **Sync favorites as liked** | When enabled, films marked as favorites in Jellyfin will be marked as "liked" on Letterboxd |
-| **Only sync recently played** | Limits the daily catch-up sync to films played within the last N days (prevents a full library resync) |
-| **Raw Cookies** | Paste your browser's cookie header here if Letterboxd login returns 403 due to Cloudflare protection |
-
-### Cloudflare troubleshooting
-
-If login fails with a 403 error, Cloudflare is blocking the automated request. To work around this:
-
-1. Log into Letterboxd in your browser
-2. Open DevTools (F12) > Network tab
-3. Reload the page and click any request to `letterboxd.com`
-4. Copy the full `Cookie` header value from the request headers
-5. Paste it into the **Raw Cookies** field in the plugin config
-
-The `cf_clearance` cookie in particular is what bypasses the Cloudflare challenge. These cookies expire, so you may need to refresh them periodically.
-
-## How it works
-
-### Real-time sync
-
-The plugin listens for Jellyfin's `PlaybackStopped` event. When a movie is played to completion:
-
-1. Checks if the user has a configured Letterboxd account
-2. Looks up the film on Letterboxd via its TMDb ID (`letterboxd.com/tmdb/{id}`)
-3. Checks the user's diary to avoid logging duplicates for the same date
-4. Submits a diary entry via Letterboxd's web interface
-
-### Scheduled sync
-
-A daily task iterates all configured users and their played movies, syncing any that haven't been logged yet. This catches anything missed by the real-time handler (e.g., if Jellyfin was restarted mid-playback, or if Letterboxd was temporarily unreachable).
-
-The scheduled task runs once per day by default. You can trigger it manually from **Dashboard > Scheduled Tasks > Sync watched movies to Letterboxd**.
+Output DLLs are in `LetterboxdSync/bin/Release/net9.0/`.
 
 ## License
 
