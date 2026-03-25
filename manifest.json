@@ -12,7 +12,7 @@
         "changelog": "Fix sync history persistence across version upgrades",
         "targetAbi": "10.11.0.0",
         "sourceUrl": "https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/releases/download/v1.2.1/jellyfin-plugin-letterboxd-v1.2.1.zip",
-        "checksum": "7098365419ed33169dcdea7bd0daa0c2",
+        "checksum": "4a9dc0f75d90c945b1aa30e1b353ad63",
         "timestamp": "2026-03-26T01:00:00Z"
       },
       {
