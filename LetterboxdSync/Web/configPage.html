@@ -108,8 +108,38 @@
                 <div id="reviewModal" class="lb-modal-overlay">
                     <div class="lb-modal">
                         <h3 id="reviewTitle" style="margin-top:0;">Write Review</h3>
-                        <textarea id="reviewText" rows="6" placeholder="Write your review..."></textarea>
-                        <div style="margin-top:0.5em;"><label class="c-muted"><input type="checkbox" id="reviewSpoilers" /> Contains spoilers</label></div>
+                        <textarea id="reviewText" rows="5" placeholder="Write your review..."></textarea>
+                        <div style="margin-top:0.7em;">
+                            <label style="display:block;opacity:0.5;font-size:0.85em;margin-bottom:0.3em;">Rating</label>
+                            <div id="starRating" style="display:flex;gap:0.15em;cursor:pointer;font-size:1.6em;user-select:none;">
+                                <span data-val="0.5" class="lb-half">&#9734;</span>
+                                <span data-val="1">&#9734;</span>
+                                <span data-val="1.5" class="lb-half">&#9734;</span>
+                                <span data-val="2">&#9734;</span>
+                                <span data-val="2.5" class="lb-half">&#9734;</span>
+                                <span data-val="3">&#9734;</span>
+                                <span data-val="3.5" class="lb-half">&#9734;</span>
+                                <span data-val="4">&#9734;</span>
+                                <span data-val="4.5" class="lb-half">&#9734;</span>
+                                <span data-val="5">&#9734;</span>
+                            </div>
+                            <span id="ratingLabel" style="font-size:0.85em;opacity:0.5;margin-left:0.3em;">No rating</span>
+                            <input type="hidden" id="reviewRating" value="" />
+                            <style>
+                                .lb-half { font-size:0.6em; vertical-align:super; margin-right:-0.1em; }
+                                #starRating span { transition: color 0.1s; color: rgba(255,255,255,0.2); }
+                                #starRating span.filled { color: #00e054; }
+                                #starRating span:hover { color: #00e054; opacity: 0.7; }
+                            </style>
+                        </div>
+                        <div style="margin-top:0.5em;display:flex;flex-wrap:wrap;gap:0.5em 1.5em;align-items:center;">
+                            <label class="c-muted"><input type="checkbox" id="reviewSpoilers" /> Contains spoilers</label>
+                            <label class="c-muted"><input type="checkbox" id="reviewRewatch" /> This is a rewatch</label>
+                        </div>
+                        <div id="rewatchDateRow" style="display:none;margin-top:0.5em;">
+                            <label style="display:block;opacity:0.5;font-size:0.85em;margin-bottom:0.2em;">Date watched</label>
+                            <input type="date" id="reviewDate" style="padding:0.4em;background:rgba(255,255,255,0.06);color:inherit;border:1px solid rgba(255,255,255,0.1);border-radius:4px;" />
+                        </div>
                         <div style="margin-top:1em;display:flex;gap:1em;">
                             <button type="button" class="lb-btn lb-btn-primary" id="reviewSubmit">Post to Letterboxd</button>
                             <button type="button" class="lb-btn lb-btn-secondary" id="reviewCancel">Cancel</button>
@@ -264,12 +294,20 @@
                                     var link = e.FilmSlug ? '<a href="https://letterboxd.com/film/' + e.FilmSlug + '/" target="_blank" class="lb-link">' + e.FilmTitle + '</a>' : e.FilmTitle;
                                     var ts = new Date(e.Timestamp);
                                     var time = ts.toLocaleDateString() + ' ' + ts.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-                                    var canReview = (s === 'Success' || s === 'Rewatch');
+                                    var canReview = (s === 'Success' || s === 'Rewatch' || s === 'Skipped');
                                     var btn = (e.FilmSlug && canReview) ? '<button type="button" onclick="LB.openReview(\'' + e.FilmSlug + '\',\'' + e.FilmTitle.replace(/'/g, "\\'") + '\')" class="lb-btn lb-btn-review">Review</button>' : '';
-                                    var err = s === 'Failed' && e.Error ? ' title="' + e.Error.replace(/"/g, '&quot;') + '"' : '';
+                                    var errText = '';
+                                    if (s === 'Failed' && e.Error) {
+                                        var shortErr = e.Error;
+                                        if (shortErr.indexOf('403') >= 0 || shortErr.indexOf('Just a moment') >= 0) shortErr = 'Blocked by Cloudflare. Refresh your Raw Cookies in Settings.';
+                                        else if (shortErr.length > 150) shortErr = shortErr.substring(0, 150) + '...';
+                                        errText = ' title="' + shortErr.replace(/"/g, '&quot;') + '"';
+                                    }
+                                    var err = errText;
                                     var scStyle = sc ? ' style="color:' + sc + ';"' : ' class="c-muted"';
+                                    var failIcon = (s === 'Failed' && errText) ? ' <span style="cursor:help;opacity:0.7;"' + err + '>&#9432;</span>' : '';
                                     tr.innerHTML = '<td style="padding:0.5em;">' + link + '</td>'
-                                        + '<td style="padding:0.5em;"><span' + scStyle + err + '>' + st + '</span></td>'
+                                        + '<td style="padding:0.5em;"><span' + scStyle + '>' + st + '</span>' + failIcon + '</td>'
                                         + '<td style="padding:0.5em;" class="c-muted">' + (e.Source || '') + '</td>'
                                         + '<td style="padding:0.5em;" class="c-muted">' + time + '</td>'
                                         + '<td style="padding:0.5em;">' + btn + '</td>';
@@ -328,6 +366,12 @@
                             document.getElementById('reviewTitle').textContent = 'Review: ' + title;
                             document.getElementById('reviewText').value = '';
                             document.getElementById('reviewSpoilers').checked = false;
+                            document.getElementById('reviewRewatch').checked = false;
+                            document.getElementById('rewatchDateRow').style.display = 'none';
+                            document.getElementById('reviewDate').value = new Date().toISOString().split('T')[0];
+                            document.getElementById('reviewRating').value = '';
+                            document.getElementById('ratingLabel').textContent = 'No rating';
+                            document.querySelectorAll('#starRating span').forEach(function (s) { s.classList.remove('filled'); s.innerHTML = '&#9734;'; });
                             document.getElementById('reviewStatus').textContent = '';
                             document.getElementById('reviewModal').style.display = 'block';
                         },
@@ -335,21 +379,48 @@
                         submitReview: function () {
                             var self = this;
                             var text = document.getElementById('reviewText').value.trim();
-                            if (!text) { document.getElementById('reviewStatus').textContent = 'Write something first.'; return; }
+                            var isRewatch = document.getElementById('reviewRewatch').checked;
+                            var date = document.getElementById('reviewDate').value;
+
+                            if (!text && !isRewatch) { document.getElementById('reviewStatus').textContent = 'Write a review or mark as rewatch.'; return; }
+
                             document.getElementById('reviewStatus').textContent = 'Posting...';
                             document.getElementById('reviewSubmit').disabled = true;
+
+                            var ratingVal = document.getElementById('reviewRating').value;
+                            var rating = ratingVal ? parseFloat(ratingVal) : null;
 
                             ApiClient.ajax({
                                 url: ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/Review'),
                                 type: 'POST', contentType: 'application/json',
-                                data: JSON.stringify({ filmSlug: self.currentSlug, reviewText: text, containsSpoilers: document.getElementById('reviewSpoilers').checked })
-                            }).then(function () {
+                                data: JSON.stringify({
+                                    filmSlug: self.currentSlug,
+                                    reviewText: text || null,
+                                    containsSpoilers: document.getElementById('reviewSpoilers').checked,
+                                    isRewatch: isRewatch,
+                                    date: isRewatch && date ? date : null,
+                                    rating: rating
+                                })
+                            }).then(function (response) {
                                 document.getElementById('reviewSubmit').disabled = false;
-                                document.getElementById('reviewStatus').innerHTML = '<span class="c-green">Posted!</span>';
+                                var msg = isRewatch ? 'Rewatch logged!' : 'Review posted!';
+                                document.getElementById('reviewStatus').innerHTML = '<span class="c-green">' + msg + '</span>';
+                                self.loadStats();
+                                self.loadHistory();
                                 setTimeout(function () { document.getElementById('reviewModal').style.display = 'none'; }, 1500);
-                            }, function () {
+                            }, function (err) {
                                 document.getElementById('reviewSubmit').disabled = false;
-                                document.getElementById('reviewStatus').innerHTML = '<span class="c-red">Failed to post</span>';
+                                var msg = 'Failed to post';
+                                try {
+                                    var data = JSON.parse(err.responseText || '{}');
+                                    if (data.error) msg = data.error;
+                                    if (msg.indexOf('403') >= 0 || msg.indexOf('Cloudflare') >= 0 || msg.indexOf('Just a moment') >= 0) {
+                                        msg = 'Blocked by Cloudflare. Try refreshing your Raw Cookies in Settings.';
+                                    }
+                                } catch (e) {}
+                                document.getElementById('reviewStatus').innerHTML = '<span class="c-red">' + msg + '</span>';
+                                self.loadStats();
+                                self.loadHistory();
                             });
                         },
 
@@ -366,6 +437,32 @@
                             document.getElementById('runSyncBtn').addEventListener('click', function () { self.runSync(); });
                             document.getElementById('reviewCancel').addEventListener('click', function () { document.getElementById('reviewModal').style.display = 'none'; });
                             document.getElementById('reviewSubmit').addEventListener('click', function () { self.submitReview(); });
+                            document.getElementById('reviewRewatch').addEventListener('change', function () {
+                                document.getElementById('rewatchDateRow').style.display = this.checked ? '' : 'none';
+                            });
+
+                            // Star rating
+                            var stars = document.querySelectorAll('#starRating span');
+                            stars.forEach(function (star) {
+                                star.addEventListener('click', function () {
+                                    var val = parseFloat(this.getAttribute('data-val'));
+                                    var current = parseFloat(document.getElementById('reviewRating').value);
+                                    // Click same star to clear
+                                    if (val === current) {
+                                        document.getElementById('reviewRating').value = '';
+                                        document.getElementById('ratingLabel').textContent = 'No rating';
+                                        stars.forEach(function (s) { s.classList.remove('filled'); s.innerHTML = '&#9734;'; });
+                                        return;
+                                    }
+                                    document.getElementById('reviewRating').value = val;
+                                    document.getElementById('ratingLabel').textContent = val + ' / 5';
+                                    stars.forEach(function (s) {
+                                        var sv = parseFloat(s.getAttribute('data-val'));
+                                        if (sv <= val) { s.classList.add('filled'); s.innerHTML = '&#9733;'; }
+                                        else { s.classList.remove('filled'); s.innerHTML = '&#9734;'; }
+                                    });
+                                });
+                            });
                         }
                     };
 

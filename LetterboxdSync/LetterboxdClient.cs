@@ -644,7 +644,7 @@ public class LetterboxdClient : IDisposable
     /// Post a review for a film that's already in the user's diary.
     /// Uses the Letterboxd API to update the most recent log entry with a review.
     /// </summary>
-    public async Task PostReviewAsync(string filmSlug, string reviewText, bool containsSpoilers = false)
+    public async Task PostReviewAsync(string filmSlug, string? reviewText, bool containsSpoilers = false, bool isRewatch = false, string? date = null, double? rating = null)
     {
         await RefreshCsrfAsync().ConfigureAwait(false);
 
@@ -685,22 +685,30 @@ public class LetterboxdClient : IDisposable
         if (string.IsNullOrEmpty(productionId) && string.IsNullOrEmpty(filmId))
             throw new Exception($"Could not resolve film identifiers for /film/{filmSlug}/");
 
-        // Post a new diary entry with the review
+        var diaryDate = !string.IsNullOrEmpty(date) ? date : DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
         var payload = new Dictionary<string, object?>
         {
             ["diaryDetails"] = new Dictionary<string, object>
             {
-                ["diaryDate"] = DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-                ["rewatch"] = true
-            },
-            ["review"] = new Dictionary<string, object>
-            {
-                ["text"] = reviewText,
-                ["containsSpoilers"] = containsSpoilers
+                ["diaryDate"] = diaryDate,
+                ["rewatch"] = isRewatch
             },
             ["tags"] = Array.Empty<string>(),
             ["like"] = false
         };
+
+        if (!string.IsNullOrWhiteSpace(reviewText))
+        {
+            payload["review"] = new Dictionary<string, object>
+            {
+                ["text"] = reviewText,
+                ["containsSpoilers"] = containsSpoilers
+            };
+        }
+
+        if (rating.HasValue)
+            payload["rating"] = rating.Value;
 
         if (!string.IsNullOrEmpty(productionId))
             payload["productionId"] = productionId;
@@ -708,27 +716,45 @@ public class LetterboxdClient : IDisposable
             payload["filmId"] = filmId;
 
         var jsonBody = JsonSerializer.Serialize(payload);
+        _logger.LogInformation("PostReview payload: {Body}", jsonBody);
 
-        using var req = new HttpRequestMessage(HttpMethod.Post, "/api/v0/production-log-entries");
-        req.Headers.Referrer = new Uri($"https://letterboxd.com/film/{filmSlug}/");
-        req.Headers.TryAddWithoutValidation("Origin", "https://letterboxd.com");
-        req.Headers.TryAddWithoutValidation("X-Requested-With", "XMLHttpRequest");
-        req.Headers.TryAddWithoutValidation("X-CSRF-TOKEN", _csrf);
-        req.Headers.TryAddWithoutValidation("sec-fetch-dest", "empty");
-        req.Headers.TryAddWithoutValidation("sec-fetch-mode", "cors");
-        req.Headers.TryAddWithoutValidation("sec-fetch-site", "same-origin");
-        req.Headers.Accept.Clear();
-        req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Post, "/api/v0/production-log-entries");
+            req.Headers.Referrer = new Uri($"https://letterboxd.com/film/{filmSlug}/");
+            req.Headers.TryAddWithoutValidation("Origin", "https://letterboxd.com");
+            req.Headers.TryAddWithoutValidation("X-Requested-With", "XMLHttpRequest");
+            req.Headers.TryAddWithoutValidation("X-CSRF-TOKEN", _csrf);
+            req.Headers.TryAddWithoutValidation("sec-fetch-dest", "empty");
+            req.Headers.TryAddWithoutValidation("sec-fetch-mode", "cors");
+            req.Headers.TryAddWithoutValidation("sec-fetch-site", "same-origin");
+            req.Headers.Accept.Clear();
+            req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            req.Content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
 
-        req.Content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
+            using var res = await _client.SendAsync(req).ConfigureAwait(false);
+            var body = await res.Content.ReadAsStringAsync().ConfigureAwait(false);
 
-        using var res = await _client.SendAsync(req).ConfigureAwait(false);
-        var body = await res.Content.ReadAsStringAsync().ConfigureAwait(false);
+            if (res.StatusCode == HttpStatusCode.Forbidden && attempt < 2)
+            {
+                var backoff = (attempt + 1) * 15000 + Random.Shared.Next(10000);
+                _logger.LogWarning("Review post for {FilmSlug} got 403. Backing off {Delay}ms (attempt {Attempt}/3)",
+                    filmSlug, backoff, attempt + 1);
+                await Task.Delay(backoff).ConfigureAwait(false);
+                continue;
+            }
 
-        if ((int)res.StatusCode < 200 || (int)res.StatusCode >= 300)
-            throw new Exception($"Review post returned {(int)res.StatusCode} for {filmSlug}: {Truncate(body, 300)}");
+            _logger.LogInformation("Review response for {FilmSlug}: status={Status}, body={Body}",
+                filmSlug, (int)res.StatusCode, Truncate(body, 500));
 
-        _logger.LogInformation("Posted review for {FilmSlug}", filmSlug);
+            if ((int)res.StatusCode < 200 || (int)res.StatusCode >= 300)
+                throw new Exception($"Review post returned {(int)res.StatusCode} for {filmSlug}: {Truncate(body, 300)}");
+
+            _logger.LogInformation("Posted review for {FilmSlug}", filmSlug);
+            return;
+        }
+
+        throw new Exception($"Failed to post review for {filmSlug} after 3 attempts");
     }
 
     private static string Truncate(string s, int max = 300)
