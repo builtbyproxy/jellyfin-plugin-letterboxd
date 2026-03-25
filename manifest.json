@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.2.1.0",
+        "changelog": "Fix sync history persistence across version upgrades",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/releases/download/v1.2.1/jellyfin-plugin-letterboxd-v1.2.1.zip",
+        "checksum": "7098365419ed33169dcdea7bd0daa0c2",
+        "timestamp": "2026-03-26T01:00:00Z"
+      },
+      {
         "version": "1.2.0.0",
         "changelog": "Star ratings in reviews, rewatch date picker, Cloudflare retry on reviews, better error display, sync history persistence fix",
         "targetAbi": "10.11.0.0",
