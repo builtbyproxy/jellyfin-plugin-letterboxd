@@ -92,25 +92,35 @@ public class PlaybackHandler : IHostedService, IDisposable
 
                 var film = await client.LookupFilmByTmdbIdAsync(tmdbId).ConfigureAwait(false);
 
-                // Check for duplicate
-                var lastLog = await client.GetLastDiaryDateAsync(film.Slug).ConfigureAwait(false);
+                // Check diary for duplicates and rewatch detection
+                var diary = await client.GetDiaryInfoAsync(film.Slug).ConfigureAwait(false);
                 var viewingDate = DateTime.Now.Date;
 
-                if (lastLog != null && lastLog.Value.Date == viewingDate)
+                if (diary.LastDate != null && diary.LastDate.Value.Date == viewingDate)
                 {
                     _logger.LogInformation("{Title} already logged on Letterboxd for {Date}, skipping",
                         e.Item.Name, viewingDate.ToString("yyyy-MM-dd"));
                     continue;
                 }
 
+                bool isRewatch = diary.HasAnyEntry;
                 var userData = _userDataManager.GetUserData(user, e.Item!);
                 bool liked = account.SyncFavorites && (userData?.IsFavorite ?? false);
 
-                await client.MarkAsWatchedAsync(film.Slug, film.FilmId, DateTime.Now, liked, film.ProductionId)
-                    .ConfigureAwait(false);
+                // Map Jellyfin rating (0-10) to Letterboxd (0.5-5.0 in 0.5 steps)
+                double? lbRating = null;
+                if (userData?.Rating.HasValue == true)
+                {
+                    var mapped = Math.Round(userData.Rating.Value / 2.0 * 2) / 2.0;
+                    lbRating = Math.Clamp(mapped, 0.5, 5.0);
+                }
 
-                _logger.LogInformation("Logged {Title} to Letterboxd diary for {Username}",
-                    e.Item.Name, account.LetterboxdUsername);
+                await client.MarkAsWatchedAsync(film.Slug, film.FilmId, DateTime.Now, liked,
+                    film.ProductionId, isRewatch, lbRating).ConfigureAwait(false);
+
+                var action = isRewatch ? "Logged rewatch of" : "Logged";
+                _logger.LogInformation("{Action} {Title} to Letterboxd diary for {Username}",
+                    action, e.Item.Name, account.LetterboxdUsername);
             }
             catch (Exception ex)
             {

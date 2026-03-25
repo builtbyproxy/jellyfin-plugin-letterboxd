@@ -314,7 +314,9 @@ public class LetterboxdClient : IDisposable
         return new FilmResult(filmSlug, filmId, productionId);
     }
 
-    public async Task<DateTime?> GetLastDiaryDateAsync(string filmSlug)
+    public record DiaryInfo(DateTime? LastDate, bool HasAnyEntry);
+
+    public async Task<DiaryInfo> GetDiaryInfoAsync(string filmSlug)
     {
         var url = $"/{_username}/film/{filmSlug}/diary/";
 
@@ -323,7 +325,7 @@ public class LetterboxdClient : IDisposable
         using var res = await _client.SendAsync(req).ConfigureAwait(false);
 
         if (!res.IsSuccessStatusCode)
-            return null;
+            return new DiaryInfo(null, false);
 
         var html = await res.Content.ReadAsStringAsync().ConfigureAwait(false);
         var doc = new HtmlDocument();
@@ -334,7 +336,7 @@ public class LetterboxdClient : IDisposable
         var years = doc.DocumentNode.SelectNodes("//a[contains(@class, 'year')]");
 
         if (months == null || days == null || years == null)
-            return null;
+            return new DiaryInfo(null, false);
 
         var dates = new List<DateTime>();
         var count = Math.Min(Math.Min(months.Count, days.Count), years.Count);
@@ -346,53 +348,47 @@ public class LetterboxdClient : IDisposable
                 dates.Add(parsed);
         }
 
-        return dates.Count > 0 ? dates.Max() : null;
+        return new DiaryInfo(
+            dates.Count > 0 ? dates.Max() : null,
+            dates.Count > 0
+        );
     }
 
-    public async Task MarkAsWatchedAsync(string filmSlug, string filmId, DateTime? date, bool liked, string? productionId = null)
+    public async Task MarkAsWatchedAsync(string filmSlug, string filmId, DateTime? date, bool liked,
+        string? productionId = null, bool rewatch = false, double? rating = null)
     {
         var viewingDate = date ?? DateTime.Now;
-        _logger.LogDebug("MarkAsWatched: slug={Slug}, productionId={ProductionId}, date={Date}",
-            filmSlug, productionId ?? "null", viewingDate.ToString("yyyy-MM-dd"));
+        _logger.LogDebug("MarkAsWatched: slug={Slug}, date={Date}, rewatch={Rewatch}, rating={Rating}",
+            filmSlug, viewingDate.ToString("yyyy-MM-dd"), rewatch, rating);
 
         for (int attempt = 0; attempt < MaxRetries; attempt++)
         {
             await RefreshCsrfAsync().ConfigureAwait(false);
 
-            // Try the new JSON API first (production-log-entries), fall back to log-entries
             var endpoints = new[] { "/api/v0/production-log-entries", "/api/v0/log-entries" };
 
             foreach (var endpoint in endpoints)
             {
-                string jsonBody;
+                var payload = new Dictionary<string, object?>
+                {
+                    ["diaryDetails"] = new Dictionary<string, object>
+                    {
+                        ["diaryDate"] = viewingDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                        ["rewatch"] = rewatch
+                    },
+                    ["tags"] = Array.Empty<string>(),
+                    ["like"] = liked
+                };
+
+                if (rating.HasValue)
+                    payload["rating"] = rating.Value;
+
                 if (endpoint.Contains("production") && !string.IsNullOrEmpty(productionId))
-                {
-                    jsonBody = JsonSerializer.Serialize(new
-                    {
-                        productionId = productionId,
-                        diaryDetails = new
-                        {
-                            diaryDate = viewingDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-                            rewatch = false
-                        },
-                        tags = Array.Empty<string>(),
-                        like = liked
-                    });
-                }
+                    payload["productionId"] = productionId;
                 else
-                {
-                    jsonBody = JsonSerializer.Serialize(new
-                    {
-                        filmId = filmId,
-                        diaryDetails = new
-                        {
-                            diaryDate = viewingDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-                            rewatch = false
-                        },
-                        tags = Array.Empty<string>(),
-                        like = liked
-                    });
-                }
+                    payload["filmId"] = filmId;
+
+                string jsonBody = JsonSerializer.Serialize(payload);
 
                 using var req = new HttpRequestMessage(HttpMethod.Post, endpoint);
                 req.Headers.Referrer = new Uri($"https://letterboxd.com/film/{filmSlug}/");

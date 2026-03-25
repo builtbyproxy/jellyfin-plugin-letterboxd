@@ -118,9 +118,9 @@ public class SyncTask : IScheduledTask
                     var userData = _userDataManager.GetUserData(user, movie);
                     var viewingDate = userData?.LastPlayedDate?.Date ?? DateTime.Now.Date;
 
-                    // Duplicate check
-                    var lastLog = await client.GetLastDiaryDateAsync(film.Slug).ConfigureAwait(false);
-                    if (lastLog != null && lastLog.Value.Date == viewingDate)
+                    // Check diary for duplicates and rewatch detection
+                    var diary = await client.GetDiaryInfoAsync(film.Slug).ConfigureAwait(false);
+                    if (diary.LastDate != null && diary.LastDate.Value.Date == viewingDate)
                     {
                         _logger.LogDebug("{Title} already logged on {Date}, skipping",
                             movie.Name, viewingDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
@@ -128,13 +128,23 @@ public class SyncTask : IScheduledTask
                         continue;
                     }
 
+                    bool isRewatch = diary.HasAnyEntry;
                     bool liked = account.SyncFavorites && (userData?.IsFavorite ?? false);
 
-                    await client.MarkAsWatchedAsync(film.Slug, film.FilmId, userData?.LastPlayedDate, liked, film.ProductionId)
-                        .ConfigureAwait(false);
+                    // Map Jellyfin rating (0-10) to Letterboxd (0.5-5.0 in 0.5 steps)
+                    double? lbRating = null;
+                    if (userData?.Rating.HasValue == true)
+                    {
+                        var mapped = Math.Round(userData.Rating.Value / 2.0 * 2) / 2.0;
+                        lbRating = Math.Clamp(mapped, 0.5, 5.0);
+                    }
 
-                    _logger.LogInformation("Logged {Title} (TMDb:{TmdbId}) to Letterboxd for {Username} on {Date}",
-                        movie.Name, tmdbId, user.Username,
+                    await client.MarkAsWatchedAsync(film.Slug, film.FilmId, userData?.LastPlayedDate, liked,
+                        film.ProductionId, isRewatch, lbRating).ConfigureAwait(false);
+
+                    var logMsg = isRewatch ? "Logged rewatch of" : "Logged";
+                    _logger.LogInformation("{Action} {Title} (TMDb:{TmdbId}) to Letterboxd for {Username} on {Date}",
+                        logMsg, movie.Name, tmdbId, user.Username,
                         viewingDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
                     synced++;
                 }
