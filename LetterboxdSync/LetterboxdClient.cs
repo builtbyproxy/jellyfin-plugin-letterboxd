@@ -226,12 +226,26 @@ public class LetterboxdClient : IDisposable
     {
         await Task.Delay(3000 + Random.Shared.Next(2000)).ConfigureAwait(false);
 
-        using var req = new HttpRequestMessage(HttpMethod.Get, $"/tmdb/{tmdbId}");
-        SetNavHeaders(req.Headers, "same-origin");
-        using var res = await _client.SendAsync(req).ConfigureAwait(false);
+        HttpResponseMessage res;
+        for (int cfAttempt = 0; ; cfAttempt++)
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, $"/tmdb/{tmdbId}");
+            SetNavHeaders(req.Headers, "same-origin");
+            res = await _client.SendAsync(req).ConfigureAwait(false);
+
+            if (res.StatusCode == HttpStatusCode.Forbidden && cfAttempt < 2)
+            {
+                var backoff = (cfAttempt + 1) * 15000 + Random.Shared.Next(10000);
+                _logger.LogWarning("TMDb lookup for {TmdbId} got 403 (Cloudflare). Backing off {Delay}ms (attempt {Attempt}/3)",
+                    tmdbId, backoff, cfAttempt + 1);
+                await Task.Delay(backoff).ConfigureAwait(false);
+                continue;
+            }
+            break;
+        }
 
         if (res.StatusCode == HttpStatusCode.Forbidden)
-            throw new Exception($"TMDb lookup returned 403 for /tmdb/{tmdbId}. Cloudflare is likely blocking. Try providing raw cookies.");
+            throw new Exception($"TMDb lookup returned 403 for /tmdb/{tmdbId} after retries. Cloudflare is blocking. Try providing raw cookies.");
 
         if (res.StatusCode == HttpStatusCode.NotFound)
             throw new Exception($"Film with TMDb ID {tmdbId} not found on Letterboxd.");
@@ -500,6 +514,221 @@ public class LetterboxdClient : IDisposable
         var pattern = $@"<input[^>]*\bname\s*=\s*[""{Regex.Escape(name)}""][^>]*\bvalue\s*=\s*[""']([^""']*)[""'][^>]*>";
         var m = Regex.Match(html, pattern, RegexOptions.IgnoreCase);
         return m.Success ? WebUtility.HtmlDecode(m.Groups[1].Value) : null;
+    }
+
+    /// <summary>
+    /// Scrape a Letterboxd watchlist and return TMDb IDs for all films.
+    /// </summary>
+    public async Task<List<int>> GetWatchlistTmdbIdsAsync(string username)
+    {
+        var tmdbIds = new List<int>();
+        var page = 1;
+
+        while (true)
+        {
+            await Task.Delay(2000 + Random.Shared.Next(2000)).ConfigureAwait(false);
+
+            using var req = new HttpRequestMessage(HttpMethod.Get, $"/{username}/watchlist/page/{page}/");
+            SetNavHeaders(req.Headers, "same-origin");
+            using var res = await _client.SendAsync(req).ConfigureAwait(false);
+
+            if (!res.IsSuccessStatusCode) break;
+
+            var html = await res.Content.ReadAsStringAsync().ConfigureAwait(false);
+            var doc = new HtmlDocument();
+            doc.LoadHtml(html);
+
+            var posters = doc.DocumentNode.SelectNodes("//div[@data-component-class='LazyPoster']");
+            if (posters == null || posters.Count == 0) break;
+
+            foreach (var poster in posters)
+            {
+                var slug = poster.GetAttributeValue("data-item-slug", string.Empty);
+                if (string.IsNullOrEmpty(slug)) continue;
+
+                await Task.Delay(2000 + Random.Shared.Next(1000)).ConfigureAwait(false);
+
+                // Load film page to get TMDb ID
+                using var filmReq = new HttpRequestMessage(HttpMethod.Get, $"/film/{slug}/");
+                SetNavHeaders(filmReq.Headers);
+                using var filmRes = await _client.SendAsync(filmReq).ConfigureAwait(false);
+                if (!filmRes.IsSuccessStatusCode) continue;
+
+                var filmHtml = await filmRes.Content.ReadAsStringAsync().ConfigureAwait(false);
+                var filmDoc = new HtmlDocument();
+                filmDoc.LoadHtml(filmHtml);
+
+                var body = filmDoc.DocumentNode.SelectSingleNode("//body");
+                var tmdbStr = body?.GetAttributeValue("data-tmdb-id", string.Empty);
+                if (!string.IsNullOrEmpty(tmdbStr) && int.TryParse(tmdbStr, out var id))
+                {
+                    tmdbIds.Add(id);
+                    _logger.LogDebug("Watchlist: {Slug} -> TMDb:{TmdbId}", slug, id);
+                }
+            }
+
+            // Check for next page
+            var nextPage = doc.DocumentNode.SelectSingleNode($"//li[a/text() = '{page + 1}']");
+            if (nextPage == null) break;
+            page++;
+        }
+
+        return tmdbIds;
+    }
+
+    /// <summary>
+    /// Scrape a user's Letterboxd diary and return TMDb IDs for all logged films.
+    /// </summary>
+    public async Task<List<int>> GetDiaryTmdbIdsAsync(string username)
+    {
+        var tmdbIds = new List<int>();
+        var page = 1;
+
+        while (true)
+        {
+            await Task.Delay(2000 + Random.Shared.Next(2000)).ConfigureAwait(false);
+
+            using var req = new HttpRequestMessage(HttpMethod.Get, $"/{username}/films/diary/page/{page}/");
+            SetNavHeaders(req.Headers, "same-origin");
+            using var res = await _client.SendAsync(req).ConfigureAwait(false);
+
+            if (!res.IsSuccessStatusCode) break;
+
+            var html = await res.Content.ReadAsStringAsync().ConfigureAwait(false);
+            var doc = new HtmlDocument();
+            doc.LoadHtml(html);
+
+            var posters = doc.DocumentNode.SelectNodes("//td[contains(@class, 'td-film-details')]//div[@data-component-class='LazyPoster']");
+            // Fallback: try any poster divs with film slugs
+            if (posters == null)
+                posters = doc.DocumentNode.SelectNodes("//div[@data-film-slug]");
+            if (posters == null || posters.Count == 0) break;
+
+            foreach (var poster in posters)
+            {
+                var slug = poster.GetAttributeValue("data-film-slug", string.Empty);
+                if (string.IsNullOrEmpty(slug))
+                    slug = poster.GetAttributeValue("data-item-slug", string.Empty);
+                if (string.IsNullOrEmpty(slug)) continue;
+
+                await Task.Delay(2000 + Random.Shared.Next(1000)).ConfigureAwait(false);
+
+                using var filmReq = new HttpRequestMessage(HttpMethod.Get, $"/film/{slug}/");
+                SetNavHeaders(filmReq.Headers);
+                using var filmRes = await _client.SendAsync(filmReq).ConfigureAwait(false);
+                if (!filmRes.IsSuccessStatusCode) continue;
+
+                var filmHtml = await filmRes.Content.ReadAsStringAsync().ConfigureAwait(false);
+                var filmDoc = new HtmlDocument();
+                filmDoc.LoadHtml(filmHtml);
+
+                var body = filmDoc.DocumentNode.SelectSingleNode("//body");
+                var tmdbStr = body?.GetAttributeValue("data-tmdb-id", string.Empty);
+                if (!string.IsNullOrEmpty(tmdbStr) && int.TryParse(tmdbStr, out var id))
+                {
+                    if (!tmdbIds.Contains(id))
+                        tmdbIds.Add(id);
+                    _logger.LogDebug("Diary: {Slug} -> TMDb:{TmdbId}", slug, id);
+                }
+            }
+
+            var nextPage = doc.DocumentNode.SelectSingleNode($"//li[a/text() = '{page + 1}']");
+            if (nextPage == null) break;
+            page++;
+        }
+
+        return tmdbIds;
+    }
+
+    /// <summary>
+    /// Post a review for a film that's already in the user's diary.
+    /// Uses the Letterboxd API to update the most recent log entry with a review.
+    /// </summary>
+    public async Task PostReviewAsync(string filmSlug, string reviewText, bool containsSpoilers = false)
+    {
+        await RefreshCsrfAsync().ConfigureAwait(false);
+
+        // We need the productionId and filmId for this film
+        // Look up via the film page
+        using var filmReq = new HttpRequestMessage(HttpMethod.Get, $"/film/{filmSlug}/");
+        SetNavHeaders(filmReq.Headers, "same-origin");
+        using var filmRes = await _client.SendAsync(filmReq).ConfigureAwait(false);
+        filmRes.EnsureSuccessStatusCode();
+
+        string? productionId = null;
+        if (filmRes.Headers.TryGetValues("x-letterboxd-identifier", out var hdrValues))
+            productionId = hdrValues.FirstOrDefault();
+
+        var filmHtml = await filmRes.Content.ReadAsStringAsync().ConfigureAwait(false);
+        var filmDoc = new HtmlDocument();
+        filmDoc.LoadHtml(filmHtml);
+
+        if (string.IsNullOrEmpty(productionId))
+        {
+            var posterEl = filmDoc.DocumentNode.SelectSingleNode("//div[@data-postered-identifier]");
+            var posterJson = posterEl?.GetAttributeValue("data-postered-identifier", string.Empty);
+            if (!string.IsNullOrEmpty(posterJson))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(posterJson);
+                    if (doc.RootElement.TryGetProperty("lid", out var lid))
+                        productionId = lid.GetString();
+                }
+                catch { }
+            }
+        }
+
+        var el = filmDoc.DocumentNode.SelectSingleNode("//div[@data-film-id]");
+        var filmId = el?.GetAttributeValue("data-film-id", string.Empty) ?? string.Empty;
+
+        if (string.IsNullOrEmpty(productionId) && string.IsNullOrEmpty(filmId))
+            throw new Exception($"Could not resolve film identifiers for /film/{filmSlug}/");
+
+        // Post a new diary entry with the review
+        var payload = new Dictionary<string, object?>
+        {
+            ["diaryDetails"] = new Dictionary<string, object>
+            {
+                ["diaryDate"] = DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                ["rewatch"] = true
+            },
+            ["review"] = new Dictionary<string, object>
+            {
+                ["text"] = reviewText,
+                ["containsSpoilers"] = containsSpoilers
+            },
+            ["tags"] = Array.Empty<string>(),
+            ["like"] = false
+        };
+
+        if (!string.IsNullOrEmpty(productionId))
+            payload["productionId"] = productionId;
+        else
+            payload["filmId"] = filmId;
+
+        var jsonBody = JsonSerializer.Serialize(payload);
+
+        using var req = new HttpRequestMessage(HttpMethod.Post, "/api/v0/production-log-entries");
+        req.Headers.Referrer = new Uri($"https://letterboxd.com/film/{filmSlug}/");
+        req.Headers.TryAddWithoutValidation("Origin", "https://letterboxd.com");
+        req.Headers.TryAddWithoutValidation("X-Requested-With", "XMLHttpRequest");
+        req.Headers.TryAddWithoutValidation("X-CSRF-TOKEN", _csrf);
+        req.Headers.TryAddWithoutValidation("sec-fetch-dest", "empty");
+        req.Headers.TryAddWithoutValidation("sec-fetch-mode", "cors");
+        req.Headers.TryAddWithoutValidation("sec-fetch-site", "same-origin");
+        req.Headers.Accept.Clear();
+        req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+        req.Content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
+
+        using var res = await _client.SendAsync(req).ConfigureAwait(false);
+        var body = await res.Content.ReadAsStringAsync().ConfigureAwait(false);
+
+        if ((int)res.StatusCode < 200 || (int)res.StatusCode >= 300)
+            throw new Exception($"Review post returned {(int)res.StatusCode} for {filmSlug}: {Truncate(body, 300)}");
+
+        _logger.LogInformation("Posted review for {FilmSlug}", filmSlug);
     }
 
     private static string Truncate(string s, int max = 300)

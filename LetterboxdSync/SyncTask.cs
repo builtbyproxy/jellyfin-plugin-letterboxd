@@ -124,11 +124,19 @@ public class SyncTask : IScheduledTask
                     {
                         _logger.LogDebug("{Title} already logged on {Date}, skipping",
                             movie.Name, viewingDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+                        SyncHistory.Record(new SyncEvent
+                        {
+                            FilmTitle = movie.Name, FilmSlug = film.Slug, TmdbId = tmdbId,
+                            Username = user.Username, Timestamp = DateTime.UtcNow,
+                            ViewingDate = viewingDate, Status = SyncStatus.Skipped, Source = "scheduled"
+                        });
                         skipped++;
                         continue;
                     }
 
-                    bool isRewatch = diary.HasAnyEntry;
+                    // Scheduled sync never marks as rewatch — it's for catching up, not real playback.
+                    // Only the real-time PlaybackHandler marks rewatches.
+                    bool isRewatch = false;
                     bool liked = account.SyncFavorites && (userData?.IsFavorite ?? false);
 
                     // Map Jellyfin rating (0-10) to Letterboxd (0.5-5.0 in 0.5 steps)
@@ -146,12 +154,26 @@ public class SyncTask : IScheduledTask
                     _logger.LogInformation("{Action} {Title} (TMDb:{TmdbId}) to Letterboxd for {Username} on {Date}",
                         logMsg, movie.Name, tmdbId, user.Username,
                         viewingDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+                    SyncHistory.Record(new SyncEvent
+                    {
+                        FilmTitle = movie.Name, FilmSlug = film.Slug, TmdbId = tmdbId,
+                        Username = user.Username, Timestamp = DateTime.UtcNow,
+                        ViewingDate = viewingDate,
+                        Status = isRewatch ? SyncStatus.Rewatch : SyncStatus.Success,
+                        Source = "scheduled"
+                    });
                     synced++;
                 }
                 catch (Exception ex)
                 {
                     _logger.LogError("Failed to sync {Title} (TMDb:{TmdbId}) for {Username}: {Message}",
                         movie.Name, tmdbId, user.Username, ex.Message);
+                    SyncHistory.Record(new SyncEvent
+                    {
+                        FilmTitle = movie.Name, TmdbId = tmdbId,
+                        Username = user.Username, Timestamp = DateTime.UtcNow,
+                        Status = SyncStatus.Failed, Error = ex.Message, Source = "scheduled"
+                    });
                     failed++;
                 }
             }

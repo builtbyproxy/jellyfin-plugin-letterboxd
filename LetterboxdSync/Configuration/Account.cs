@@ -19,4 +19,8 @@ public class Account
     public bool EnableDateFilter { get; set; }
 
     public int DateFilterDays { get; set; } = 7;
+
+    public bool EnableWatchlistSync { get; set; }
+
+    public bool EnableDiaryImport { get; set; }
 }

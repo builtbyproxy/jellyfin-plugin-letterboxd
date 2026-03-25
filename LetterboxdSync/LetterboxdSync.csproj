@@ -17,6 +17,7 @@
   <ItemGroup>
     <EmbeddedResource Include="Web\configPage.html" />
     <EmbeddedResource Include="Web\configPage.js" />
+    <EmbeddedResource Include="Web\statsPage.html" />
   </ItemGroup>
 
 </Project>
