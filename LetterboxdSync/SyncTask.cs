@@ -130,7 +130,7 @@ public class SyncTask : IScheduledTask
 
                     bool liked = account.SyncFavorites && (userData?.IsFavorite ?? false);
 
-                    await client.MarkAsWatchedAsync(film.Slug, film.FilmId, userData?.LastPlayedDate, liked)
+                    await client.MarkAsWatchedAsync(film.Slug, film.FilmId, userData?.LastPlayedDate, liked, film.ProductionId)
                         .ConfigureAwait(false);
 
                     _logger.LogInformation("Logged {Title} (TMDb:{TmdbId}) to Letterboxd for {Username} on {Date}",

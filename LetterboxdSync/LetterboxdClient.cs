@@ -266,11 +266,16 @@ public class LetterboxdClient : IDisposable
 
         var filmSlug = segments[1];
 
-        // Load film page to get the internal filmId
+        // Load film page to get the internal filmId and productionId
         using var filmReq = new HttpRequestMessage(HttpMethod.Get, $"/film/{filmSlug}/");
         SetNavHeaders(filmReq.Headers, "same-origin", $"https://letterboxd.com/tmdb/{tmdbId}");
         using var filmRes = await _client.SendAsync(filmReq).ConfigureAwait(false);
         filmRes.EnsureSuccessStatusCode();
+
+        // Try to get productionId from response header
+        string? productionId = null;
+        if (filmRes.Headers.TryGetValues("x-letterboxd-identifier", out var headerValues))
+            productionId = headerValues.FirstOrDefault();
 
         var filmHtml = await filmRes.Content.ReadAsStringAsync().ConfigureAwait(false);
         var filmDoc = new HtmlDocument();
@@ -287,7 +292,26 @@ public class LetterboxdClient : IDisposable
         if (string.IsNullOrEmpty(filmId))
             throw new Exception($"data-film-id attribute empty on /film/{filmSlug}/");
 
-        return new FilmResult(filmSlug, filmId);
+        // Fallback: try to get productionId from data-postered-identifier attribute
+        if (string.IsNullOrEmpty(productionId))
+        {
+            var posterEl = filmDoc.DocumentNode.SelectSingleNode("//div[@data-postered-identifier]");
+            var posterJson = posterEl?.GetAttributeValue("data-postered-identifier", string.Empty);
+            if (!string.IsNullOrEmpty(posterJson))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(posterJson);
+                    if (doc.RootElement.TryGetProperty("lid", out var lid))
+                        productionId = lid.GetString();
+                }
+                catch { }
+            }
+        }
+
+        _logger.LogInformation("Resolved TMDb:{TmdbId} -> slug={Slug}, filmId={FilmId}, productionId={ProductionId}",
+            tmdbId, filmSlug, filmId, productionId ?? "null");
+        return new FilmResult(filmSlug, filmId, productionId);
     }
 
     public async Task<DateTime?> GetLastDiaryDateAsync(string filmSlug)
@@ -325,74 +349,113 @@ public class LetterboxdClient : IDisposable
         return dates.Count > 0 ? dates.Max() : null;
     }
 
-    public async Task MarkAsWatchedAsync(string filmSlug, string filmId, DateTime? date, bool liked)
+    public async Task MarkAsWatchedAsync(string filmSlug, string filmId, DateTime? date, bool liked, string? productionId = null)
     {
         var viewingDate = date ?? DateTime.Now;
+        _logger.LogDebug("MarkAsWatched: slug={Slug}, productionId={ProductionId}, date={Date}",
+            filmSlug, productionId ?? "null", viewingDate.ToString("yyyy-MM-dd"));
 
         for (int attempt = 0; attempt < MaxRetries; attempt++)
         {
             await RefreshCsrfAsync().ConfigureAwait(false);
 
-            using var req = new HttpRequestMessage(HttpMethod.Post, "/s/save-diary-entry");
-            req.Headers.Referrer = new Uri($"https://letterboxd.com/film/{filmSlug}/");
-            req.Headers.TryAddWithoutValidation("Origin", "https://letterboxd.com");
-            req.Headers.TryAddWithoutValidation("X-Requested-With", "XMLHttpRequest");
-            req.Headers.TryAddWithoutValidation("sec-fetch-dest", "empty");
-            req.Headers.TryAddWithoutValidation("sec-fetch-mode", "cors");
-            req.Headers.TryAddWithoutValidation("sec-fetch-site", "same-origin");
-            req.Headers.Accept.Clear();
-            req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-            req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/javascript"));
-            req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*", 0.01));
+            // Try the new JSON API first (production-log-entries), fall back to log-entries
+            var endpoints = new[] { "/api/v0/production-log-entries", "/api/v0/log-entries" };
 
-            req.Content = new FormUrlEncodedContent(new Dictionary<string, string>
+            foreach (var endpoint in endpoints)
             {
-                { "__csrf", _csrf },
-                { "json", "true" },
-                { "viewingId", string.Empty },
-                { "filmId", filmId },
-                { "specifiedDate", date != null ? "true" : "false" },
-                { "viewingDateStr", viewingDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) },
-                { "review", string.Empty },
-                { "tags", string.Empty },
-                { "rating", "0" },
-                { "liked", liked.ToString().ToLowerInvariant() }
-            });
+                string jsonBody;
+                if (endpoint.Contains("production") && !string.IsNullOrEmpty(productionId))
+                {
+                    jsonBody = JsonSerializer.Serialize(new
+                    {
+                        productionId = productionId,
+                        diaryDetails = new
+                        {
+                            diaryDate = viewingDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                            rewatch = false
+                        },
+                        tags = Array.Empty<string>(),
+                        like = liked
+                    });
+                }
+                else
+                {
+                    jsonBody = JsonSerializer.Serialize(new
+                    {
+                        filmId = filmId,
+                        diaryDetails = new
+                        {
+                            diaryDate = viewingDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                            rewatch = false
+                        },
+                        tags = Array.Empty<string>(),
+                        like = liked
+                    });
+                }
 
-            using var res = await _client.SendAsync(req).ConfigureAwait(false);
-            var body = await res.Content.ReadAsStringAsync().ConfigureAwait(false);
+                using var req = new HttpRequestMessage(HttpMethod.Post, endpoint);
+                req.Headers.Referrer = new Uri($"https://letterboxd.com/film/{filmSlug}/");
+                req.Headers.TryAddWithoutValidation("Origin", "https://letterboxd.com");
+                req.Headers.TryAddWithoutValidation("X-Requested-With", "XMLHttpRequest");
+                req.Headers.TryAddWithoutValidation("X-CSRF-TOKEN", _csrf);
+                req.Headers.TryAddWithoutValidation("sec-fetch-dest", "empty");
+                req.Headers.TryAddWithoutValidation("sec-fetch-mode", "cors");
+                req.Headers.TryAddWithoutValidation("sec-fetch-site", "same-origin");
+                req.Headers.Accept.Clear();
+                req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-            if (res.StatusCode == HttpStatusCode.Forbidden)
-                throw new Exception($"Letterboxd returned 403 during diary submission for {filmSlug}. Likely anti-bot.");
+                req.Content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
 
-            if (res.StatusCode != HttpStatusCode.OK)
-                throw new Exception($"Letterboxd returned {(int)res.StatusCode} for {filmSlug}. Body: {Truncate(body)}");
+                using var res = await _client.SendAsync(req).ConfigureAwait(false);
+                var body = await res.Content.ReadAsStringAsync().ConfigureAwait(false);
 
-            using var doc = JsonDocument.Parse(body);
-            var json = doc.RootElement;
+                _logger.LogInformation("MarkAsWatched attempt {Attempt} ({Endpoint}): status={Status}, bodyLen={Len}",
+                    attempt + 1, endpoint, (int)res.StatusCode, body.Length);
 
-            if (json.TryGetProperty("csrf", out var csrfEl) && csrfEl.ValueKind == JsonValueKind.String)
-            {
-                var newCsrf = csrfEl.GetString();
-                if (!string.IsNullOrWhiteSpace(newCsrf))
-                    _csrf = newCsrf!;
+                // If this endpoint returns 404, try the next one
+                if (res.StatusCode == HttpStatusCode.NotFound)
+                {
+                    _logger.LogWarning("Endpoint {Endpoint} returned 404, trying next", endpoint);
+                    continue;
+                }
+
+                if (res.StatusCode == HttpStatusCode.Forbidden)
+                    throw new Exception($"Letterboxd returned 403 for {filmSlug}. Likely anti-bot.");
+
+                if ((int)res.StatusCode >= 200 && (int)res.StatusCode < 300)
+                {
+                    _logger.LogInformation("Successfully logged {Slug} via {Endpoint}", filmSlug, endpoint);
+                    return;
+                }
+
+                // Non-404 error — log and check for transient
+                var sanitized = Regex.Replace(body, @"\s+", " ").Trim();
+                _logger.LogError("Diary save failed for {Slug} via {Endpoint}: status={Status}, body={Body}",
+                    filmSlug, endpoint, (int)res.StatusCode, Truncate(sanitized, 500));
+
+                if (attempt < MaxRetries - 1 &&
+                    (sanitized.Contains("expired", StringComparison.OrdinalIgnoreCase) ||
+                     sanitized.Contains("try again", StringComparison.OrdinalIgnoreCase)))
+                {
+                    var delayMs = (attempt + 1) * 5000 + Random.Shared.Next(3000);
+                    _logger.LogWarning("Transient error, retrying in {Delay}ms", delayMs);
+                    await Task.Delay(delayMs).ConfigureAwait(false);
+                    goto NextAttempt;
+                }
+
+                throw new Exception($"Letterboxd returned {(int)res.StatusCode} for {filmSlug}");
             }
 
-            if (IsSuccess(json, out var message))
-                return;
-
-            if (attempt < MaxRetries - 1 &&
-                (message.Contains("expired", StringComparison.OrdinalIgnoreCase) ||
-                 message.Contains("try again", StringComparison.OrdinalIgnoreCase)))
+            // Both endpoints returned 404
+            if (attempt < MaxRetries - 1)
             {
                 var delayMs = (attempt + 1) * 5000 + Random.Shared.Next(3000);
-                _logger.LogWarning("Transient error on attempt {Attempt} for {FilmSlug}: \"{Message}\". Retrying in {Delay}ms",
-                    attempt + 1, filmSlug, message, delayMs);
+                _logger.LogWarning("All endpoints returned 404, retrying in {Delay}ms", delayMs);
                 await Task.Delay(delayMs).ConfigureAwait(false);
-                continue;
             }
 
-            throw new Exception($"Failed to log {filmSlug}: {message}");
+            NextAttempt:;
         }
 
         throw new Exception($"Failed to log {filmSlug} after {MaxRetries} retries.");

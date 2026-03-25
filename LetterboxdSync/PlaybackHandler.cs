@@ -106,7 +106,7 @@ public class PlaybackHandler : IHostedService, IDisposable
                 var userData = _userDataManager.GetUserData(user, e.Item!);
                 bool liked = account.SyncFavorites && (userData?.IsFavorite ?? false);
 
-                await client.MarkAsWatchedAsync(film.Slug, film.FilmId, DateTime.Now, liked)
+                await client.MarkAsWatchedAsync(film.Slug, film.FilmId, DateTime.Now, liked, film.ProductionId)
                     .ConfigureAwait(false);
 
                 _logger.LogInformation("Logged {Title} to Letterboxd diary for {Username}",
