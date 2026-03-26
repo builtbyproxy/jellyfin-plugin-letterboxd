@@ -20,7 +20,7 @@ public class LetterboxdClient : IDisposable
     private const int MaxRetries = 3;
 
     private readonly ILogger _logger;
-    private readonly CookieContainer _cookieContainer = new();
+    internal readonly CookieContainer _cookieContainer = new();
     private readonly HttpClientHandler _handler;
     private readonly HttpClient _client;
     private string _csrf = string.Empty;
@@ -29,16 +29,23 @@ public class LetterboxdClient : IDisposable
     private bool _hasReauthenticated;
 
     public LetterboxdClient(ILogger logger)
+        : this(logger, null)
+    {
+    }
+
+    internal LetterboxdClient(ILogger logger, HttpMessageHandler? handler)
     {
         _logger = logger;
-        _handler = new HttpClientHandler
+        _handler = handler as HttpClientHandler ?? new HttpClientHandler
         {
             CookieContainer = _cookieContainer,
             AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate | DecompressionMethods.Brotli,
             AllowAutoRedirect = true
         };
 
-        _client = new HttpClient(_handler) { BaseAddress = BaseUri };
+        _client = handler != null
+            ? new HttpClient(handler, disposeHandler: false) { BaseAddress = BaseUri }
+            : new HttpClient(_handler) { BaseAddress = BaseUri };
 
         _client.DefaultRequestHeaders.UserAgent.Clear();
         _client.DefaultRequestHeaders.UserAgent.ParseAdd(
