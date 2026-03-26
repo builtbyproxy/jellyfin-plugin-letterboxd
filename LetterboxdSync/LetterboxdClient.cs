@@ -20,23 +20,32 @@ public class LetterboxdClient : IDisposable
     private const int MaxRetries = 3;
 
     private readonly ILogger _logger;
-    private readonly CookieContainer _cookieContainer = new();
+    internal readonly CookieContainer _cookieContainer = new();
     private readonly HttpClientHandler _handler;
     private readonly HttpClient _client;
     private string _csrf = string.Empty;
     private string _username = string.Empty;
+    private string _password = string.Empty;
+    private bool _hasReauthenticated;
 
     public LetterboxdClient(ILogger logger)
+        : this(logger, null)
+    {
+    }
+
+    internal LetterboxdClient(ILogger logger, HttpMessageHandler? handler)
     {
         _logger = logger;
-        _handler = new HttpClientHandler
+        _handler = handler as HttpClientHandler ?? new HttpClientHandler
         {
             CookieContainer = _cookieContainer,
             AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate | DecompressionMethods.Brotli,
             AllowAutoRedirect = true
         };
 
-        _client = new HttpClient(_handler) { BaseAddress = BaseUri };
+        _client = handler != null
+            ? new HttpClient(handler, disposeHandler: false) { BaseAddress = BaseUri }
+            : new HttpClient(_handler) { BaseAddress = BaseUri };
 
         _client.DefaultRequestHeaders.UserAgent.Clear();
         _client.DefaultRequestHeaders.UserAgent.ParseAdd(
@@ -106,9 +115,20 @@ public class LetterboxdClient : IDisposable
         _csrf = token;
     }
 
+    public async Task ForceReauthenticateAsync(string username, string password)
+    {
+        // Clear session cookies so HasAuthenticatedSession() returns false
+        foreach (Cookie cookie in _cookieContainer.GetCookies(BaseUri))
+            cookie.Expired = true;
+
+        _logger.LogInformation("Forcing fresh login for {Username}", username);
+        await AuthenticateAsync(username, password).ConfigureAwait(false);
+    }
+
     public async Task AuthenticateAsync(string username, string password)
     {
         _username = username;
+        _password = password;
 
         if (HasAuthenticatedSession())
         {
@@ -428,6 +448,14 @@ public class LetterboxdClient : IDisposable
                 {
                     _logger.LogWarning("Endpoint {Endpoint} returned 404, trying next", endpoint);
                     continue;
+                }
+
+                if (res.StatusCode == HttpStatusCode.Unauthorized && !_hasReauthenticated)
+                {
+                    _logger.LogWarning("Got 401, session expired. Re-authenticating and retrying");
+                    _hasReauthenticated = true;
+                    await ForceReauthenticateAsync(_username!, _password!).ConfigureAwait(false);
+                    goto NextAttempt;
                 }
 
                 if (res.StatusCode == HttpStatusCode.Forbidden)
