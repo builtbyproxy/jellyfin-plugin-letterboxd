@@ -60,9 +60,12 @@ public class WatchlistSyncTask : IScheduledTask
             using var client = new LetterboxdClient(_logger);
             try
             {
-                client.SetRawCookies(account.RawCookies);
-                await client.AuthenticateAsync(account.LetterboxdUsername, account.LetterboxdPassword)
-                    .ConfigureAwait(false);
+                await client.AuthenticateAsync(account).ConfigureAwait(false);
+
+                if (client.TokensRefreshed)
+                {
+                    Plugin.Instance!.SaveConfiguration();
+                }
             }
             catch (Exception ex)
             {
@@ -91,7 +94,8 @@ public class WatchlistSyncTask : IScheduledTask
             {
                 IncludeItemTypes = new[] { BaseItemKind.Movie },
                 IsVirtualItem = false,
-                Recursive = true
+                Recursive = true,
+                OrderBy = new[] { (ItemSortBy.SortName, Jellyfin.Database.Implementations.Enums.SortOrder.Ascending) }
             });
 
             var matchedItems = new List<Guid>();
@@ -115,7 +119,8 @@ public class WatchlistSyncTask : IScheduledTask
             var existingPlaylists = _libraryManager.GetItemList(new InternalItemsQuery(user)
             {
                 IncludeItemTypes = new[] { BaseItemKind.Playlist },
-                Recursive = true
+                Recursive = true,
+                OrderBy = new[] { (ItemSortBy.SortName, Jellyfin.Database.Implementations.Enums.SortOrder.Ascending) }
             });
 
             var playlist = existingPlaylists.FirstOrDefault(p => p.Name == playlistName);
@@ -139,7 +144,8 @@ public class WatchlistSyncTask : IScheduledTask
                 var existingIds = _libraryManager.GetItemList(new InternalItemsQuery(user)
                 {
                     ParentId = playlist.Id,
-                    Recursive = false
+                    Recursive = false,
+                    OrderBy = new[] { (ItemSortBy.SortName, Jellyfin.Database.Implementations.Enums.SortOrder.Ascending) }
                 }).Select(c => c.Id).ToHashSet();
 
                 var newItems = matchedItems.Where(id => !existingIds.Contains(id)).ToArray();

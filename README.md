@@ -8,7 +8,7 @@
 
 Automatically sync your Jellyfin watch history to your Letterboxd diary. Films are logged in real-time when you finish watching, with a daily scheduled sync as a safety net.
 
-Uses Letterboxd's current JSON API (`/api/v0/production-log-entries`).
+Uses the authenticated Letterboxd Android REST API (`/api/v0`).
 
 <img width="2430" height="1432" alt="CleanShot 2026-03-25 at 23 34 29@2x" src="https://github.com/user-attachments/assets/19f74448-93b9-4ad2-b02b-bfb0c35d0706" />
 
@@ -25,9 +25,8 @@ Uses Letterboxd's current JSON API (`/api/v0/production-log-entries`).
 - **Watchlist sync** — import your Letterboxd watchlist as a Jellyfin playlist
 - **Diary import** — mark Jellyfin movies as played if they're in your Letterboxd diary
 - **Reviews** — write and post reviews to Letterboxd from the plugin dashboard
-- **Dashboard** — sync stats, activity history, and one-click sync from the plugin page
-- **Cloudflare resilient** — automatic retry with backoff on rate limits, raw cookie fallback
-- **Retry with backoff** — handles transient Letterboxd errors gracefully
+- **Dashboard** — sync stats, activity history, one-click manual retry for failed syncs, and manual triggering
+- **Automatic APIs Retries** — gracefully handles transient Letterboxd errors and timeouts using cloned requests
 - **Date filtering** — limit catch-up syncs to recently watched films
 
 ## Install
@@ -44,7 +43,7 @@ Uses Letterboxd's current JSON API (`/api/v0/production-log-entries`).
 ### Manual install
 
 1. Download the latest ZIP from [Releases](https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/releases)
-2. Extract `LetterboxdSync.dll` and `HtmlAgilityPack.dll` to your Jellyfin plugins directory
+2. Extract `LetterboxdSync.dll` to your Jellyfin plugins directory
 3. Restart Jellyfin
 
 ## Setup
@@ -60,34 +59,22 @@ That's it. Watch a movie and check your Letterboxd diary.
 
 ### Settings per account
 
-| Setting | Description |
-|---|---|
-| **Enabled** | Must be checked for this account to sync |
-| **Favorites as liked** | Marks films as "liked" on Letterboxd if favorited in Jellyfin |
-| **Recently played only** | Limits daily catch-up to films played in the last N days |
-| **Watchlist to playlist** | Creates a "Letterboxd Watchlist" playlist in Jellyfin from your Letterboxd watchlist |
-| **Import diary as played** | Marks Jellyfin movies as played if they appear in your Letterboxd diary |
-| **Raw Cookies** | For Cloudflare bypass — see below |
+| Setting                    | Description                                                                          |
+| -------------------------- | ------------------------------------------------------------------------------------ |
+| **Enabled**                | Must be checked for this account to sync                                             |
+| **Favorites as liked**     | Marks films as "liked" on Letterboxd if favorited in Jellyfin                        |
+| **Recently played only**   | Limits daily catch-up to films played in the last N days                             |
+| **Watchlist to playlist**  | Creates a "Letterboxd Watchlist" playlist in Jellyfin from your Letterboxd watchlist |
+| **Import diary as played** | Marks Jellyfin movies as played if they appear in your Letterboxd diary              |
 
 ### Dashboard
 
 The **Dashboard** tab shows:
+
 - Sync statistics (total, synced, rewatches, skipped, failed)
 - Recent activity with links to each film on Letterboxd
 - **Run Sync Now** button to trigger a sync on demand
 - **Review** buttons to write and post reviews directly to Letterboxd
-
-### Cloudflare issues
-
-If login fails with a 403 error:
-
-1. Log into Letterboxd in your browser
-2. Open DevTools (F12) > Network tab
-3. Reload and click any request to `letterboxd.com`
-4. Copy the full **Cookie** header value
-5. Paste it into the **Raw Cookies** field
-
-The `cf_clearance` cookie expires periodically and may need refreshing.
 
 ## Requirements
 
@@ -99,10 +86,41 @@ The `cf_clearance` cookie expires periodically and may need refreshing.
 ```bash
 git clone https://github.com/builtbyproxy/jellyfin-plugin-letterboxd.git
 cd jellyfin-plugin-letterboxd
+```
+
+To build the plugin with working API credentials, you must provide a valid Letterboxd Android OAuth2 Client ID and Secret at build time. There are two ways to do this:
+
+> [!NOTE]
+> You can obtain the Client ID and Secret by intercepting the Android app's API requests.
+
+### 1. Using a `local.props` file (Recommended for development)
+
+Create a file named `local.props` inside the `LetterboxdSync/` directory with your credentials:
+
+```xml
+<Project>
+  <PropertyGroup>
+    <LetterboxdClientId>YOUR_CLIENT_ID</LetterboxdClientId>
+    <LetterboxdClientSecret>YOUR_CLIENT_SECRET</LetterboxdClientSecret>
+  </PropertyGroup>
+</Project>
+```
+
+Then build normally:
+
+```bash
 dotnet build -c Release
 ```
 
-Output DLLs are in `LetterboxdSync/bin/Release/net9.0/`.
+### 2. Passing MSBuild arguments
+
+You can also pass the properties directly via the command line:
+
+```bash
+dotnet build -c Release -p:LetterboxdClientId="YOUR_CLIENT_ID" -p:LetterboxdClientSecret="YOUR_CLIENT_SECRET"
+```
+
+Final DLL is in `LetterboxdSync/bin/Release/net9.0/`.
 
 ## License
 

@@ -16,13 +16,13 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '9.0.x'
+          dotnet-version: "9.0.x"
 
       - name: Restore
         run: dotnet restore
 
       - name: Build
-        run: dotnet build -c Release --no-restore
+        run: dotnet build -c Release -p:LetterboxdClientId="${{ secrets.LETTERBOXD_CLIENT_ID }}" -p:LetterboxdClientSecret="${{ secrets.LETTERBOXD_CLIENT_SECRET }}" --no-restore
 
       - name: Test
         run: dotnet test -c Release --no-build --verbosity normal

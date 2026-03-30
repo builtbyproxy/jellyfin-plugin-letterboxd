@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace LetterboxdSync.Configuration;
@@ -10,7 +11,11 @@ public class Account
 
     public string LetterboxdPassword { get; set; } = string.Empty;
 
-    public string? RawCookies { get; set; }
+    public string? AccessToken { get; set; }
+
+    public string? RefreshToken { get; set; }
+
+    public DateTimeOffset? TokenExpiration { get; set; }
 
     public bool Enabled { get; set; }
 

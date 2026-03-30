@@ -12,11 +12,9 @@ description: >
 category: "General"
 artifacts:
   - "LetterboxdSync.dll"
-  - "HtmlAgilityPack.dll"
 changelog: |-
   - Initial release: real-time playback sync, daily scheduled catch-up
   - Multi-user support with per-user Letterboxd accounts
   - TMDb-based film matching (no more title slug 404s)
   - Duplicate diary detection before logging
   - Retry with exponential backoff on transient errors
-  - Raw cookie support for Cloudflare bypass
