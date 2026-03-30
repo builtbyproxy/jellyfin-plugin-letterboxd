@@ -14,7 +14,6 @@ dotnet build -c Release "$PROJECT_DIR/LetterboxdSync/LetterboxdSync.csproj" -q
 echo "Deploying..."
 sshpass -p "$PASS" scp \
     "$PROJECT_DIR/LetterboxdSync/bin/Release/net9.0/LetterboxdSync.dll" \
-    "$PROJECT_DIR/LetterboxdSync/bin/Release/net9.0/HtmlAgilityPack.dll" \
     "$SERVER:$PLUGIN_DIR/"
 
 echo "Restarting Jellyfin..."

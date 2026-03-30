@@ -84,22 +84,39 @@ public class PlaybackHandler : IHostedService, IDisposable
                 e.Item.Name, tmdbId, user.Username);
 
             using var client = new LetterboxdClient(_logger);
+            FilmResult? film = null;
             try
             {
-                client.SetRawCookies(account.RawCookies);
-                await client.AuthenticateAsync(account.LetterboxdUsername, account.LetterboxdPassword)
-                    .ConfigureAwait(false);
+                await client.AuthenticateAsync(account).ConfigureAwait(false);
 
-                var film = await client.LookupFilmByTmdbIdAsync(tmdbId).ConfigureAwait(false);
+                if (client.TokensRefreshed)
+                {
+                    Plugin.Instance!.SaveConfiguration();
+                }
+
+                film = await client.LookupFilmByTmdbIdAsync(tmdbId).ConfigureAwait(false);
 
                 // Check diary for duplicates and rewatch detection
-                var diary = await client.GetDiaryInfoAsync(film.Slug).ConfigureAwait(false);
+                var diary = await client.GetDiaryInfoAsync(film.FilmId).ConfigureAwait(false);
                 var viewingDate = DateTime.Now.Date;
 
                 if (diary.LastDate != null && diary.LastDate.Value.Date == viewingDate)
                 {
-                    _logger.LogInformation("{Title} already logged on Letterboxd for {Date}, skipping",
-                        e.Item.Name, viewingDate.ToString("yyyy-MM-dd"));
+                    _logger.LogInformation("{Title} ({FilmId}) already logged or watched on Letterboxd today, skipping duplicate sync", e.Item.Name, film.FilmId);
+
+                    if (account.SyncFavorites)
+                    {
+                        try
+                        {
+                            var ud = _userDataManager.GetUserData(user, e.Item!);
+                            await client.SetFilmLikeAsync(film.FilmId, ud?.IsFavorite ?? false).ConfigureAwait(false);
+                        }
+                        catch (Exception likeEx)
+                        {
+                            _logger.LogWarning("Failed to sync like status for skipped film {Title} ({FilmId}): {Message}", e.Item.Name, film.FilmId, likeEx.Message);
+                        }
+                    }
+
                     SyncHistory.Record(new SyncEvent
                     {
                         FilmTitle = e.Item.Name, FilmSlug = film.Slug, TmdbId = tmdbId,
@@ -109,9 +126,7 @@ public class PlaybackHandler : IHostedService, IDisposable
                     continue;
                 }
 
-                bool isRewatch = diary.HasAnyEntry
-                    && diary.LastDate.HasValue
-                    && (viewingDate - diary.LastDate.Value.Date).TotalDays > 1;
+                bool isRewatch = diary.IsWatched || diary.HasAnyEntry;
                 var userData = _userDataManager.GetUserData(user, e.Item!);
                 bool liked = account.SyncFavorites && (userData?.IsFavorite ?? false);
 
@@ -124,6 +139,18 @@ public class PlaybackHandler : IHostedService, IDisposable
 
                 await client.MarkAsWatchedAsync(film.Slug, film.FilmId, DateTime.Now, liked,
                     film.ProductionId, isRewatch, lbRating).ConfigureAwait(false);
+
+                if (account.SyncFavorites)
+                {
+                    try
+                    {
+                        await client.SetFilmLikeAsync(film.FilmId, userData?.IsFavorite ?? false).ConfigureAwait(false);
+                    }
+                    catch (Exception likeEx)
+                    {
+                        _logger.LogWarning("Failed to sync like status for {Title} ({FilmId}): {Message}", e.Item.Name, film.FilmId, likeEx.Message);
+                    }
+                }
 
                 var action = isRewatch ? "Logged rewatch of" : "Logged";
                 _logger.LogInformation("{Action} {Title} to Letterboxd diary for {Username}",
@@ -139,8 +166,17 @@ public class PlaybackHandler : IHostedService, IDisposable
             }
             catch (Exception ex)
             {
-                _logger.LogError("Failed to sync {Title} (TMDb:{TmdbId}) to Letterboxd for {Username}: {Message}",
-                    e.Item.Name, tmdbId, user.Username, ex.Message);
+                if (film != null)
+                {
+                    _logger.LogError("Failed to sync {Title} (TMDb:{TmdbId}, FilmId:{FilmId}) to Letterboxd for {Username}: {Message}",
+                        e.Item.Name, tmdbId, film.FilmId, user.Username, ex.Message);
+                }
+                else
+                {
+                    _logger.LogError("Failed to sync {Title} (TMDb:{TmdbId}) to Letterboxd for {Username}: {Message}",
+                        e.Item.Name, tmdbId, user.Username, ex.Message);
+                }
+
                 SyncHistory.Record(new SyncEvent
                 {
                     FilmTitle = e.Item.Name, TmdbId = tmdbId,

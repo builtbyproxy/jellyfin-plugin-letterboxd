@@ -58,9 +58,12 @@ public class DiaryImportTask : IScheduledTask
             using var client = new LetterboxdClient(_logger);
             try
             {
-                client.SetRawCookies(account.RawCookies);
-                await client.AuthenticateAsync(account.LetterboxdUsername, account.LetterboxdPassword)
-                    .ConfigureAwait(false);
+                await client.AuthenticateAsync(account).ConfigureAwait(false);
+
+                if (client.TokensRefreshed)
+                {
+                    Plugin.Instance!.SaveConfiguration();
+                }
             }
             catch (Exception ex)
             {
@@ -90,7 +93,8 @@ public class DiaryImportTask : IScheduledTask
                 IncludeItemTypes = new[] { BaseItemKind.Movie },
                 IsVirtualItem = false,
                 IsPlayed = false,
-                Recursive = true
+                Recursive = true,
+                OrderBy = new[] { (ItemSortBy.SortName, Jellyfin.Database.Implementations.Enums.SortOrder.Ascending) }
             });
 
             var marked = 0;
@@ -102,7 +106,8 @@ public class DiaryImportTask : IScheduledTask
                 if (!diaryTmdbIds.Contains(tmdbId)) continue;
 
                 var userData = _userDataManager.GetUserData(user, movie);
-                if (userData == null) continue;
+                if (userData == null || userData.Played) continue;
+
                 userData.Played = true;
                 userData.LastPlayedDate = DateTime.UtcNow;
                 _userDataManager.SaveUserData(user, movie, userData, UserDataSaveReason.Import, cancellationToken);

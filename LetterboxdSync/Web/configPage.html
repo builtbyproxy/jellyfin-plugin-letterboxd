@@ -1,65 +1,261 @@
 <!DOCTYPE html>
 <html>
+
 <head>
     <title>Letterboxd Sync</title>
 </head>
+
 <body>
     <div id="letterboxdSyncConfigPage" data-role="page" class="page type-interior pluginConfigurationPage"
-         data-require="emby-input,emby-button,emby-checkbox,emby-select">
+        data-require="emby-input,emby-button,emby-checkbox,emby-select">
         <div data-role="content">
             <div class="content-primary">
 
                 <style>
-                    .lb-tabs { display:flex; gap:0; margin-bottom:1.5em; border-bottom:2px solid rgba(255,255,255,0.1); }
-                    .lb-tab { background:none; border:none; color:inherit; opacity:0.5; padding:0.7em 1.5em; cursor:pointer; font-size:1em; border-bottom:2px solid transparent; margin-bottom:-2px; transition: opacity 0.2s, border-color 0.2s; }
-                    .lb-tab.active { opacity:1; border-bottom-color: #00e054; }
-                    .lb-tab:hover { opacity:0.8; }
-
-                    .lb-stat-cards { display:flex; gap:0.75em; flex-wrap:wrap; margin-bottom:2em; }
-                    .lb-stat-card { background:rgba(255,255,255,0.04); padding:1em 1.5em; border-radius:8px; min-width:90px; text-align:center; flex:1; border:1px solid rgba(255,255,255,0.06); }
-                    .lb-stat-val { font-size:2em; font-weight:bold; }
-                    .lb-stat-label { opacity:0.5; font-size:0.85em; margin-top:0.1em; }
-
-                    .lb-table { width:100%; border-collapse:collapse; font-size:0.9em; }
-                    .lb-table thead tr { border-bottom:2px solid rgba(255,255,255,0.1); text-align:left; }
-                    .lb-table th, .lb-table td { padding:0.6em 0.5em; }
-                    .lb-table tbody tr { border-bottom:1px solid rgba(255,255,255,0.04); transition: background 0.15s; }
-                    .lb-table tbody tr:hover { background:rgba(255,255,255,0.03); }
-
-                    .lb-account { background:rgba(255,255,255,0.04); padding:1em; margin-bottom:1em; border-radius:8px; border:1px solid rgba(255,255,255,0.06); }
-                    .lb-account label.lb-field { display:block; opacity:0.5; font-size:0.85em; margin-bottom:0.2em; }
-                    .lb-account input[type=text], .lb-account input[type=password], .lb-account input[type=number], .lb-account select {
-                        width:100%; padding:0.4em; background:rgba(255,255,255,0.06); color:inherit; border:1px solid rgba(255,255,255,0.1); border-radius:4px; box-sizing:border-box;
+                    .lb-tabs {
+                        display: flex;
+                        gap: 0;
+                        margin-bottom: 1.5em;
+                        border-bottom: 2px solid rgba(255, 255, 255, 0.1);
                     }
-                    .lb-account input[type=number] { width:80px; }
-                    .lb-checks { display:flex; flex-wrap:wrap; gap:0.5em 1.5em; margin-top:0.7em; }
-                    .lb-checks label { opacity:0.8; font-size:0.9em; }
 
-                    .lb-btn { border:none; padding:0.5em 1.5em; border-radius:4px; cursor:pointer; font-weight:bold; font-size:0.95em; transition: opacity 0.2s; }
-                    .lb-btn:hover { opacity:0.85; }
-                    .lb-btn:disabled { opacity:0.4; cursor:default; }
-                    .lb-btn-primary { background:#00e054; color:#000; }
-                    .lb-btn-secondary { background:rgba(255,255,255,0.08); color:inherit; border:1px solid rgba(255,255,255,0.1); }
-                    .lb-btn-danger { background:none; color:#e74c3c; border:1px solid #e74c3c; font-size:0.8em; padding:0.2em 0.8em; }
-                    .lb-btn-review { background:none; color:#40bcf4; border:1px solid rgba(64,188,244,0.4); font-size:0.8em; padding:0.15em 0.5em; }
-                    .lb-btn-review:hover { border-color:#40bcf4; }
+                    .lb-tab {
+                        background: none;
+                        border: none;
+                        color: inherit;
+                        opacity: 0.5;
+                        padding: 0.7em 1.5em;
+                        cursor: pointer;
+                        font-size: 1em;
+                        border-bottom: 2px solid transparent;
+                        margin-bottom: -2px;
+                        transition: opacity 0.2s, border-color 0.2s;
+                    }
 
-                    .lb-link { color:#00e054; text-decoration:none; }
-                    .lb-link:hover { text-decoration:underline; }
+                    .lb-tab.active {
+                        opacity: 1;
+                        border-bottom-color: #00e054;
+                    }
 
-                    .lb-modal-overlay { display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.7); z-index:9999; }
-                    .lb-modal { background:rgba(30,34,40,0.98); padding:2em; border-radius:8px; max-width:500px; width:90%; margin:15vh auto; border:1px solid rgba(255,255,255,0.1); }
-                    .lb-modal textarea { width:100%; padding:0.5em; background:rgba(255,255,255,0.06); color:inherit; border:1px solid rgba(255,255,255,0.1); border-radius:4px; resize:vertical; box-sizing:border-box; }
+                    .lb-tab:hover {
+                        opacity: 0.8;
+                    }
 
-                    .c-green { color:#00e054; }
-                    .c-blue { color:#40bcf4; }
-                    .c-red { color:#e74c3c; }
-                    .c-muted { opacity:0.4; }
+                    .lb-stat-cards {
+                        display: flex;
+                        gap: 0.75em;
+                        flex-wrap: wrap;
+                        margin-bottom: 2em;
+                    }
+
+                    .lb-stat-card {
+                        background: rgba(255, 255, 255, 0.04);
+                        padding: 1em 1.5em;
+                        border-radius: 8px;
+                        min-width: 90px;
+                        text-align: center;
+                        flex: 1;
+                        border: 1px solid rgba(255, 255, 255, 0.06);
+                    }
+
+                    .lb-stat-val {
+                        font-size: 2em;
+                        font-weight: bold;
+                    }
+
+                    .lb-stat-label {
+                        opacity: 0.5;
+                        font-size: 0.85em;
+                        margin-top: 0.1em;
+                    }
+
+                    .lb-table {
+                        width: 100%;
+                        border-collapse: collapse;
+                        font-size: 0.9em;
+                    }
+
+                    .lb-table thead tr {
+                        border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+                        text-align: left;
+                    }
+
+                    .lb-table th,
+                    .lb-table td {
+                        padding: 0.6em 0.5em;
+                    }
+
+                    .lb-table tbody tr {
+                        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+                        transition: background 0.15s;
+                    }
+
+                    .lb-table tbody tr:hover {
+                        background: rgba(255, 255, 255, 0.03);
+                    }
+
+                    .lb-account {
+                        background: rgba(255, 255, 255, 0.04);
+                        padding: 1em;
+                        margin-bottom: 1em;
+                        border-radius: 8px;
+                        border: 1px solid rgba(255, 255, 255, 0.06);
+                    }
+
+                    .lb-account label.lb-field {
+                        display: block;
+                        opacity: 0.5;
+                        font-size: 0.85em;
+                        margin-bottom: 0.2em;
+                    }
+
+                    .lb-account input[type=text],
+                    .lb-account input[type=password],
+                    .lb-account input[type=number],
+                    .lb-account select {
+                        width: 100%;
+                        padding: 0.4em;
+                        background: rgba(255, 255, 255, 0.06);
+                        color: inherit;
+                        border: 1px solid rgba(255, 255, 255, 0.1);
+                        border-radius: 4px;
+                        box-sizing: border-box;
+                    }
+
+                    .lb-account select option {
+                        background: #202020;
+                        color: #fff;
+                    }
+
+                    .lb-account input[type=number] {
+                        width: 80px;
+                    }
+
+                    .lb-checks {
+                        display: flex;
+                        flex-wrap: wrap;
+                        gap: 0.5em 1.5em;
+                        margin-top: 0.7em;
+                    }
+
+                    .lb-checks label {
+                        opacity: 0.8;
+                        font-size: 0.9em;
+                    }
+
+                    .lb-btn {
+                        border: none;
+                        padding: 0.5em 1.5em;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        font-weight: bold;
+                        font-size: 0.95em;
+                        transition: opacity 0.2s;
+                    }
+
+                    .lb-btn:hover {
+                        opacity: 0.85;
+                    }
+
+                    .lb-btn:disabled {
+                        opacity: 0.4;
+                        cursor: default;
+                    }
+
+                    .lb-btn-primary {
+                        background: #00e054;
+                        color: #000;
+                    }
+
+                    .lb-btn-secondary {
+                        background: rgba(255, 255, 255, 0.08);
+                        color: inherit;
+                        border: 1px solid rgba(255, 255, 255, 0.1);
+                    }
+
+                    .lb-btn-danger {
+                        background: none;
+                        color: #e74c3c;
+                        border: 1px solid #e74c3c;
+                        font-size: 0.8em;
+                        padding: 0.2em 0.8em;
+                    }
+
+                    .lb-btn-review {
+                        background: none;
+                        color: #40bcf4;
+                        border: 1px solid rgba(64, 188, 244, 0.4);
+                        font-size: 0.8em;
+                        padding: 0.15em 0.5em;
+                    }
+
+                    .lb-btn-review:hover {
+                        border-color: #40bcf4;
+                    }
+
+                    .lb-link {
+                        color: #00e054;
+                        text-decoration: none;
+                    }
+
+                    .lb-link:hover {
+                        text-decoration: underline;
+                    }
+
+                    .lb-modal-overlay {
+                        display: none;
+                        position: fixed;
+                        top: 0;
+                        left: 0;
+                        right: 0;
+                        bottom: 0;
+                        background: rgba(0, 0, 0, 0.7);
+                        z-index: 9999;
+                    }
+
+                    .lb-modal {
+                        background: rgba(30, 34, 40, 0.98);
+                        padding: 2em;
+                        border-radius: 8px;
+                        max-width: 500px;
+                        width: 90%;
+                        margin: 15vh auto;
+                        border: 1px solid rgba(255, 255, 255, 0.1);
+                    }
+
+                    .lb-modal textarea {
+                        width: 100%;
+                        padding: 0.5em;
+                        background: rgba(255, 255, 255, 0.06);
+                        color: inherit;
+                        border: 1px solid rgba(255, 255, 255, 0.1);
+                        border-radius: 4px;
+                        resize: vertical;
+                        box-sizing: border-box;
+                    }
+
+                    .c-green {
+                        color: #00e054;
+                    }
+
+                    .c-blue {
+                        color: #40bcf4;
+                    }
+
+                    .c-red {
+                        color: #e74c3c;
+                    }
+
+                    .c-muted {
+                        opacity: 0.4;
+                    }
                 </style>
 
                 <div style="display:flex;align-items:center;gap:0.7em;margin-bottom:0.5em;">
                     <h2 style="margin:0;">Letterboxd Sync</h2>
-                    <span class="c-muted" style="font-size:0.7em;padding-top:0.3em;">by <a href="https://lachlanyoung.dev" target="_blank" class="lb-link">Lachlan Young</a> and <strong style="color:#ff8c00;">AI</strong></span>
+                    <span class="c-muted" style="font-size:0.7em;padding-top:0.3em;">by <a
+                            href="https://lachlanyoung.dev" target="_blank" class="lb-link">Lachlan Young</a> and
+                        <strong style="color:#ff8c00;">AI</strong></span>
                 </div>
 
                 <!-- Tabs -->
@@ -76,19 +272,46 @@
                     </div>
 
                     <div class="lb-stat-cards">
-                        <div class="lb-stat-card"><div class="lb-stat-val" id="statTotal">-</div><div class="lb-stat-label">Total</div></div>
-                        <div class="lb-stat-card"><div class="lb-stat-val c-green" id="statSuccess">-</div><div class="lb-stat-label">Synced</div></div>
-                        <div class="lb-stat-card"><div class="lb-stat-val c-blue" id="statRewatches">-</div><div class="lb-stat-label">Rewatches</div></div>
-                        <div class="lb-stat-card"><div class="lb-stat-val c-muted" id="statSkipped">-</div><div class="lb-stat-label">Skipped</div></div>
-                        <div class="lb-stat-card"><div class="lb-stat-val c-red" id="statFailed">-</div><div class="lb-stat-label">Failed</div></div>
+                        <div class="lb-stat-card">
+                            <div class="lb-stat-val" id="statTotal">-</div>
+                            <div class="lb-stat-label">Total</div>
+                        </div>
+                        <div class="lb-stat-card">
+                            <div class="lb-stat-val c-green" id="statSuccess">-</div>
+                            <div class="lb-stat-label">Synced</div>
+                        </div>
+                        <!-- <div class="lb-stat-card">
+                            <div class="lb-stat-val c-blue" id="statRewatches">-</div>
+                            <div class="lb-stat-label">Rewatches</div>
+                        </div> -->
+                        <div class="lb-stat-card">
+                            <div class="lb-stat-val c-muted" id="statSkipped">-</div>
+                            <div class="lb-stat-label">Skipped</div>
+                        </div>
+                        <div class="lb-stat-card">
+                            <div class="lb-stat-val c-red" id="statFailed">-</div>
+                            <div class="lb-stat-label">Failed</div>
+                        </div>
                     </div>
 
                     <h3 style="margin-bottom:0.5em;">Recent Activity</h3>
                     <div style="overflow-x:auto;">
                         <table class="lb-table">
-                            <thead><tr><th>Film</th><th>Status</th><th>Source</th><th>Date</th><th></th></tr></thead>
+                            <thead>
+                                <tr>
+                                    <th>Film</th>
+                                    <th>User</th>
+                                    <th>Status</th>
+                                    <th>Source</th>
+                                    <th>Date</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
                             <tbody id="historyBody">
-                                <tr><td colspan="5" style="padding:2em;text-align:center;" class="c-muted">Run a sync to see activity here.</td></tr>
+                                <tr>
+                                    <td colspan="6" style="padding:2em;text-align:center;" class="c-muted">Run a sync to
+                                        see activity here.</td>
+                                </tr>
                             </tbody>
                         </table>
                     </div>
@@ -99,7 +322,8 @@
                     <h3>User Accounts</h3>
                     <p class="c-muted" style="font-size:0.9em;">Map Jellyfin users to their Letterboxd accounts.</p>
                     <div id="accountsList"></div>
-                    <button type="button" class="lb-btn lb-btn-secondary" id="addAccountBtn" style="margin-top:1em;">+ Add Account</button>
+                    <button type="button" class="lb-btn lb-btn-secondary" id="addAccountBtn" style="margin-top:1em;">+
+                        Add Account</button>
                     <div style="margin-top:2em;">
                         <button type="button" class="lb-btn lb-btn-primary" id="saveBtn">Save</button>
                     </div>
@@ -111,8 +335,10 @@
                         <h3 id="reviewTitle" style="margin-top:0;">Write Review</h3>
                         <textarea id="reviewText" rows="5" placeholder="Write your review..."></textarea>
                         <div style="margin-top:0.7em;">
-                            <label style="display:block;opacity:0.5;font-size:0.85em;margin-bottom:0.3em;">Rating</label>
-                            <div id="starRating" style="display:flex;gap:0.15em;cursor:pointer;font-size:1.6em;user-select:none;">
+                            <label
+                                style="display:block;opacity:0.5;font-size:0.85em;margin-bottom:0.3em;">Rating</label>
+                            <div id="starRating"
+                                style="display:flex;gap:0.15em;cursor:pointer;font-size:1.6em;user-select:none;">
                                 <span data-val="0.5" class="lb-half">&#9734;</span>
                                 <span data-val="1">&#9734;</span>
                                 <span data-val="1.5" class="lb-half">&#9734;</span>
@@ -124,25 +350,46 @@
                                 <span data-val="4.5" class="lb-half">&#9734;</span>
                                 <span data-val="5">&#9734;</span>
                             </div>
-                            <span id="ratingLabel" style="font-size:0.85em;opacity:0.5;margin-left:0.3em;">No rating</span>
+                            <span id="ratingLabel" style="font-size:0.85em;opacity:0.5;margin-left:0.3em;">No
+                                rating</span>
                             <input type="hidden" id="reviewRating" value="" />
                             <style>
-                                .lb-half { font-size:0.6em; vertical-align:super; margin-right:-0.1em; }
-                                #starRating span { transition: color 0.1s; color: rgba(255,255,255,0.2); }
-                                #starRating span.filled { color: #00e054; }
-                                #starRating span:hover { color: #00e054; opacity: 0.7; }
+                                .lb-half {
+                                    font-size: 0.6em;
+                                    vertical-align: super;
+                                    margin-right: -0.1em;
+                                }
+
+                                #starRating span {
+                                    transition: color 0.1s;
+                                    color: rgba(255, 255, 255, 0.2);
+                                }
+
+                                #starRating span.filled {
+                                    color: #00e054;
+                                }
+
+                                #starRating span:hover {
+                                    color: #00e054;
+                                    opacity: 0.7;
+                                }
                             </style>
                         </div>
                         <div style="margin-top:0.5em;display:flex;flex-wrap:wrap;gap:0.5em 1.5em;align-items:center;">
-                            <label class="c-muted"><input type="checkbox" id="reviewSpoilers" /> Contains spoilers</label>
-                            <label class="c-muted"><input type="checkbox" id="reviewRewatch" /> This is a rewatch</label>
+                            <label class="c-muted"><input type="checkbox" id="reviewSpoilers" /> Contains
+                                spoilers</label>
+                            <label class="c-muted"><input type="checkbox" id="reviewRewatch" /> This is a
+                                rewatch</label>
                         </div>
                         <div id="rewatchDateRow" style="display:none;margin-top:0.5em;">
-                            <label style="display:block;opacity:0.5;font-size:0.85em;margin-bottom:0.2em;">Date watched</label>
-                            <input type="date" id="reviewDate" style="padding:0.4em;background:rgba(255,255,255,0.06);color:inherit;border:1px solid rgba(255,255,255,0.1);border-radius:4px;" />
+                            <label style="display:block;opacity:0.5;font-size:0.85em;margin-bottom:0.2em;">Date
+                                watched</label>
+                            <input type="date" id="reviewDate"
+                                style="padding:0.4em;background:rgba(255,255,255,0.06);color:inherit;border:1px solid rgba(255,255,255,0.1);border-radius:4px;" />
                         </div>
                         <div style="margin-top:1em;display:flex;gap:1em;">
-                            <button type="button" class="lb-btn lb-btn-primary" id="reviewSubmit">Post to Letterboxd</button>
+                            <button type="button" class="lb-btn lb-btn-primary" id="reviewSubmit">Post to
+                                Letterboxd</button>
                             <button type="button" class="lb-btn lb-btn-secondary" id="reviewCancel">Cancel</button>
                         </div>
                         <div id="reviewStatus" style="margin-top:0.5em;font-size:0.9em;"></div>
@@ -185,8 +432,6 @@
                                 + '<input type="text" class="lbUsername" /></div>'
                                 + '<div style="margin-bottom:0.5em;"><label class="lb-field">Letterboxd Password</label>'
                                 + '<input type="password" class="lbPassword" /></div>'
-                                + '<div style="margin-bottom:0.5em;"><label class="lb-field">Raw Cookies <span class="c-muted">(optional, Cloudflare bypass)</span></label>'
-                                + '<input type="text" class="rawCookies" placeholder="Paste cookie header if login gets 403" /></div>'
                                 + '<div class="lb-checks">'
                                 + '<label><input type="checkbox" class="accountEnabled" /> Enabled</label>'
                                 + '<label><input type="checkbox" class="syncFavorites" /> Favorites as liked</label>'
@@ -208,7 +453,6 @@
                                 entry.querySelector('.jellyfinUser').value = account.UserJellyfinId || '';
                                 entry.querySelector('.lbUsername').value = account.LetterboxdUsername || '';
                                 entry.querySelector('.lbPassword').value = account.LetterboxdPassword || '';
-                                entry.querySelector('.rawCookies').value = account.RawCookies || '';
                                 entry.querySelector('.accountEnabled').checked = account.Enabled !== false;
                                 entry.querySelector('.syncFavorites').checked = account.SyncFavorites === true;
                                 entry.querySelector('.enableDateFilter').checked = account.EnableDateFilter === true;
@@ -232,7 +476,6 @@
                                     UserJellyfinId: entry.querySelector('.jellyfinUser').value,
                                     LetterboxdUsername: entry.querySelector('.lbUsername').value,
                                     LetterboxdPassword: entry.querySelector('.lbPassword').value,
-                                    RawCookies: entry.querySelector('.rawCookies').value || null,
                                     Enabled: entry.querySelector('.accountEnabled').checked,
                                     SyncFavorites: entry.querySelector('.syncFavorites').checked,
                                     EnableDateFilter: entry.querySelector('.enableDateFilter').checked,
@@ -268,11 +511,12 @@
 
                         loadStats: function () {
                             ApiClient.getJSON(ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/Stats')).then(function (s) {
-                                document.getElementById('statTotal').textContent = s.total;
-                                document.getElementById('statSuccess').textContent = s.success;
-                                document.getElementById('statRewatches').textContent = s.rewatches;
-                                document.getElementById('statSkipped').textContent = s.skipped;
-                                document.getElementById('statFailed').textContent = s.failed;
+                                var el;
+                                if ((el = document.getElementById('statTotal'))) el.textContent = s.total;
+                                if ((el = document.getElementById('statSuccess'))) el.textContent = s.success;
+                                if ((el = document.getElementById('statRewatches'))) el.textContent = s.rewatches;
+                                if ((el = document.getElementById('statSkipped'))) el.textContent = s.skipped;
+                                if ((el = document.getElementById('statFailed'))) el.textContent = s.failed;
                             });
                         },
 
@@ -281,33 +525,36 @@
                                 var tbody = document.getElementById('historyBody');
                                 tbody.innerHTML = '';
                                 if (!events || events.length === 0) {
-                                    tbody.innerHTML = '<tr><td colspan="5" style="padding:2em;text-align:center;" class="c-muted">Run a sync to see activity here.</td></tr>';
+                                    tbody.innerHTML = '<tr><td colspan="6" style="padding:2em;text-align:center;" class="c-muted">Run a sync to see activity here.</td></tr>';
                                     return;
                                 }
                                 events.forEach(function (e) {
                                     var tr = document.createElement('tr');
                                     // Handle both integer and string enum values
-                                    var s = typeof e.Status === 'string' ? e.Status : ['Success','Skipped','Failed','Rewatch'][e.Status] || 'Unknown';
-                                    var statusMap = { Success: {color:'#00e054', label:'Synced'}, Skipped: {color:'', label:'Skipped'}, Failed: {color:'#e74c3c', label:'Failed'}, Rewatch: {color:'#40bcf4', label:'Rewatch'} };
-                                    var sm = statusMap[s] || {color:'', label:s};
+                                    var s = typeof e.Status === 'string' ? e.Status : ['Success', 'Skipped', 'Failed', 'Rewatch'][e.Status] || 'Unknown';
+                                    var statusMap = { Success: { color: '#00e054', label: 'Synced' }, Skipped: { color: '', label: 'Skipped' }, Failed: { color: '#e74c3c', label: 'Failed' }, Rewatch: { color: '#40bcf4', label: 'Rewatch' } };
+                                    var sm = statusMap[s] || { color: '', label: s };
                                     var sc = sm.color;
                                     var st = sm.label;
                                     var link = e.FilmSlug ? '<a href="https://letterboxd.com/film/' + e.FilmSlug + '/" target="_blank" class="lb-link">' + e.FilmTitle + '</a>' : e.FilmTitle;
                                     var ts = new Date(e.Timestamp);
-                                    var time = ts.toLocaleDateString() + ' ' + ts.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+                                    var time = ts.toLocaleDateString() + ' ' + ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                                     var canReview = (s === 'Success' || s === 'Rewatch' || s === 'Skipped');
                                     var btn = (e.FilmSlug && canReview) ? '<button type="button" onclick="LB.openReview(\'' + e.FilmSlug + '\',\'' + e.FilmTitle.replace(/'/g, "\\'") + '\')" class="lb-btn lb-btn-review">Review</button>' : '';
+                                    if (s === 'Failed' && e.TmdbId > 0) {
+                                        btn = '<button type="button" onclick="LB.retrySync(' + e.TmdbId + ', this)" class="lb-btn lb-btn-secondary" style="font-size:0.8em;padding:0.2em 0.8em;">Retry</button>';
+                                    }
                                     var errText = '';
                                     if (s === 'Failed' && e.Error) {
                                         var shortErr = e.Error;
-                                        if (shortErr.indexOf('403') >= 0 || shortErr.indexOf('Just a moment') >= 0) shortErr = 'Blocked by Cloudflare. Refresh your Raw Cookies in Settings.';
-                                        else if (shortErr.length > 150) shortErr = shortErr.substring(0, 150) + '...';
+                                        if (shortErr.length > 150) shortErr = shortErr.substring(0, 150) + '...';
                                         errText = ' title="' + shortErr.replace(/"/g, '&quot;') + '"';
                                     }
                                     var err = errText;
                                     var scStyle = sc ? ' style="color:' + sc + ';"' : ' class="c-muted"';
                                     var failIcon = (s === 'Failed' && errText) ? ' <span style="cursor:help;opacity:0.7;"' + err + '>&#9432;</span>' : '';
                                     tr.innerHTML = '<td style="padding:0.5em;">' + link + '</td>'
+                                        + '<td style="padding:0.5em;" class="c-muted">' + (e.Username || 'Unknown') + '</td>'
                                         + '<td style="padding:0.5em;"><span' + scStyle + '>' + st + '</span>' + failIcon + '</td>'
                                         + '<td style="padding:0.5em;" class="c-muted">' + (e.Source || '') + '</td>'
                                         + '<td style="padding:0.5em;" class="c-muted">' + time + '</td>'
@@ -409,17 +656,57 @@
                                 self.loadStats();
                                 self.loadHistory();
                                 setTimeout(function () { document.getElementById('reviewModal').style.display = 'none'; }, 1500);
-                            }, function (err) {
+                            }, async function (err) {
                                 document.getElementById('reviewSubmit').disabled = false;
                                 var msg = 'Failed to post';
                                 try {
-                                    var data = JSON.parse(err.responseText || '{}');
-                                    if (data.error) msg = data.error;
-                                    if (msg.indexOf('403') >= 0 || msg.indexOf('Cloudflare') >= 0 || msg.indexOf('Just a moment') >= 0) {
-                                        msg = 'Blocked by Cloudflare. Try refreshing your Raw Cookies in Settings.';
+                                    if (err && typeof err.json === 'function') {
+                                        var data = await err.json();
+                                        if (data && data.error) msg = data.error;
+                                    } else {
+                                        var payload = err.response || err.responseText || err.data;
+                                        var data = typeof payload === 'string' ? JSON.parse(payload) : (payload || {});
+                                        if (data.error) msg = data.error;
                                     }
-                                } catch (e) {}
+                                } catch (e) { }
                                 document.getElementById('reviewStatus').innerHTML = '<span class="c-red">' + msg + '</span>';
+                                self.loadStats();
+                                self.loadHistory();
+                            });
+                        },
+
+                        retrySync: function (tmdbId, btnEl) {
+                            var self = this;
+                            if (btnEl) {
+                                btnEl.disabled = true;
+                                btnEl.textContent = '...';
+                            }
+
+                            ApiClient.ajax({
+                                url: ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/Retry'),
+                                type: 'POST', contentType: 'application/json',
+                                data: JSON.stringify({ tmdbId: tmdbId })
+                            }).then(function (response) {
+                                self.loadStats();
+                                self.loadHistory();
+                            }).catch(async function (err) {
+                                var msg = 'Failed';
+                                try {
+                                    if (err && typeof err.json === 'function') {
+                                        var data = await err.json();
+                                        if (data && data.error) msg = data.error;
+                                    } else {
+                                        var payload = err.response || err.responseText || err.data;
+                                        var data = typeof payload === 'string' ? JSON.parse(payload) : (payload || {});
+                                        if (data.error) msg = data.error;
+                                        else if (err.message) msg = err.message;
+                                    }
+                                } catch (e) { }
+                                console.error('LetterboxdSync Retry failed: ' + msg, err);
+                                if (btnEl) {
+                                    btnEl.disabled = false;
+                                    btnEl.textContent = 'Retry';
+                                }
                                 self.loadStats();
                                 self.loadHistory();
                             });
@@ -474,4 +761,5 @@
         </div>
     </div>
 </body>
+
 </html>
