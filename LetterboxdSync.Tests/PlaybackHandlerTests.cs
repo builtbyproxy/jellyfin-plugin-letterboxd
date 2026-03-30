@@ -38,14 +38,14 @@ public class ReauthTests
         int logEntryCallCount = 0;
         bool didLogin = false;
 
-        var handler = new MockHandler((request, client) =>
+        var handler = new MockHandler((request, httpClient) =>
         {
             var path = request.RequestUri?.PathAndQuery ?? "";
 
-            // CSRF refresh — inject cookie into the container
+            // CSRF refresh
             if (request.Method == HttpMethod.Get && path == "/")
             {
-                client._cookieContainer.Add(BaseUri, new Cookie("com.xk72.webparts.csrf", "testtoken"));
+                httpClient.CookieContainer.Add(BaseUri, new Cookie("com.xk72.webparts.csrf", "testtoken"));
                 return new HttpResponseMessage(HttpStatusCode.OK);
             }
 
@@ -63,8 +63,8 @@ public class ReauthTests
             if (request.Method == HttpMethod.Post && path.Contains("login.do"))
             {
                 didLogin = true;
-                client._cookieContainer.Add(BaseUri, new Cookie("letterboxd.user.CURRENT", "newSession"));
-                client._cookieContainer.Add(BaseUri, new Cookie("com.xk72.webparts.csrf", "newcsrf"));
+                httpClient.CookieContainer.Add(BaseUri, new Cookie("letterboxd.user.CURRENT", "newSession"));
+                httpClient.CookieContainer.Add(BaseUri, new Cookie("com.xk72.webparts.csrf", "newcsrf"));
                 return new HttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent("{\"result\":\"success\"}")
@@ -87,14 +87,15 @@ public class ReauthTests
             return new HttpResponseMessage(HttpStatusCode.NotFound);
         });
 
-        using var client = handler.CreateClient(TestLogger);
+        var (httpClient, auth, scraper, diary) = handler.CreateClients(TestLogger);
+        using var _ = httpClient;
 
         // Set stale cookies so HasAuthenticatedSession() returns true initially
-        client.SetRawCookies("letterboxd.user.CURRENT=staleSession; com.xk72.webparts.csrf=stalecsrf");
-        await client.AuthenticateAsync("testuser", "testpass");
+        httpClient.SetRawCookies("letterboxd.user.CURRENT=staleSession; com.xk72.webparts.csrf=stalecsrf");
+        await auth.AuthenticateAsync("testuser", "testpass");
 
         // Should succeed after auto re-auth
-        await client.MarkAsWatchedAsync("test-film", "12345", DateTime.Now, false, "PROD1");
+        await diary.MarkAsWatchedAsync("test-film", "12345", DateTime.Now, false, "PROD1");
 
         Assert.True(logEntryCallCount >= 2, $"Expected at least 2 calls to production-log-entries, got {logEntryCallCount}");
         Assert.True(didLogin, "Expected a fresh login after 401");
@@ -105,13 +106,13 @@ public class ReauthTests
     {
         int loginCount = 0;
 
-        var handler = new MockHandler((request, client) =>
+        var handler = new MockHandler((request, httpClient) =>
         {
             var path = request.RequestUri?.PathAndQuery ?? "";
 
             if (request.Method == HttpMethod.Get && path == "/")
             {
-                client._cookieContainer.Add(BaseUri, new Cookie("com.xk72.webparts.csrf", "testtoken"));
+                httpClient.CookieContainer.Add(BaseUri, new Cookie("com.xk72.webparts.csrf", "testtoken"));
                 return new HttpResponseMessage(HttpStatusCode.OK);
             }
 
@@ -127,8 +128,8 @@ public class ReauthTests
             if (request.Method == HttpMethod.Post && path.Contains("login.do"))
             {
                 loginCount++;
-                client._cookieContainer.Add(BaseUri, new Cookie("letterboxd.user.CURRENT", "freshSession"));
-                client._cookieContainer.Add(BaseUri, new Cookie("com.xk72.webparts.csrf", "freshcsrf"));
+                httpClient.CookieContainer.Add(BaseUri, new Cookie("letterboxd.user.CURRENT", "freshSession"));
+                httpClient.CookieContainer.Add(BaseUri, new Cookie("com.xk72.webparts.csrf", "freshcsrf"));
                 return new HttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent("{\"result\":\"success\"}")
@@ -138,40 +139,112 @@ public class ReauthTests
             return new HttpResponseMessage(HttpStatusCode.NotFound);
         });
 
-        using var client = handler.CreateClient(TestLogger);
-        client.SetRawCookies("letterboxd.user.CURRENT=staleSession; com.xk72.webparts.csrf=stalecsrf");
+        var (httpClient, auth, _, _) = handler.CreateClients(TestLogger);
+        using var __ = httpClient;
 
-        await client.AuthenticateAsync("testuser", "testpass");
+        httpClient.SetRawCookies("letterboxd.user.CURRENT=staleSession; com.xk72.webparts.csrf=stalecsrf");
+
+        await auth.AuthenticateAsync("testuser", "testpass");
 
         // First auth should reuse session (no login call)
         Assert.Equal(0, loginCount);
 
         // Force re-auth should do a fresh login
-        await client.ForceReauthenticateAsync("testuser", "testpass");
+        await auth.ForceReauthenticateAsync("testuser", "testpass");
 
         Assert.Equal(1, loginCount);
     }
 
-    /// <summary>
-    /// Mock handler that receives the LetterboxdClient so it can manipulate cookies directly.
-    /// </summary>
-    private class MockHandler : HttpMessageHandler
+    [Fact]
+    public async Task ReauthGuard_ResetsAfterSuccessfulOperation()
     {
-        private readonly Func<HttpRequestMessage, LetterboxdClient, HttpResponseMessage> _responder;
-        private LetterboxdClient? _client;
+        int logEntryCallCount = 0;
+        int loginCount = 0;
 
-        public MockHandler(Func<HttpRequestMessage, LetterboxdClient, HttpResponseMessage> responder)
+        var handler = new MockHandler((request, httpClient) =>
+        {
+            var path = request.RequestUri?.PathAndQuery ?? "";
+
+            if (request.Method == HttpMethod.Get && path == "/")
+            {
+                httpClient.CookieContainer.Add(BaseUri, new Cookie("com.xk72.webparts.csrf", "testtoken"));
+                return new HttpResponseMessage(HttpStatusCode.OK);
+            }
+
+            if (request.Method == HttpMethod.Get && path.StartsWith("/sign-in"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        "<input type=\"hidden\" name=\"__csrf\" value=\"formtoken\" />")
+                };
+            }
+
+            if (request.Method == HttpMethod.Post && path.Contains("login.do"))
+            {
+                loginCount++;
+                httpClient.CookieContainer.Add(BaseUri, new Cookie("letterboxd.user.CURRENT", "session"));
+                httpClient.CookieContainer.Add(BaseUri, new Cookie("com.xk72.webparts.csrf", "csrf"));
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("{\"result\":\"success\"}")
+                };
+            }
+
+            if (request.Method == HttpMethod.Post && path.Contains("production-log-entries"))
+            {
+                logEntryCallCount++;
+                // First and third calls return 401, second and fourth return 200
+                if (logEntryCallCount % 2 == 1)
+                    return new HttpResponseMessage(HttpStatusCode.Unauthorized);
+
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("{\"result\":\"success\"}")
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        var (httpClient, auth, scraper, diary) = handler.CreateClients(TestLogger);
+        using var _ = httpClient;
+
+        httpClient.SetRawCookies("letterboxd.user.CURRENT=session; com.xk72.webparts.csrf=csrf");
+        await auth.AuthenticateAsync("testuser", "testpass");
+
+        // First call: 401 -> re-auth -> retry -> success
+        await diary.MarkAsWatchedAsync("film-1", "111", DateTime.Now, false, "PROD1");
+        Assert.Equal(1, loginCount);
+
+        // Second call: 401 -> should re-auth again (guard was reset)
+        await diary.MarkAsWatchedAsync("film-2", "222", DateTime.Now, false, "PROD2");
+        Assert.Equal(2, loginCount);
+    }
+
+    /// <summary>
+    /// Mock handler that receives the LetterboxdHttpClient so it can manipulate cookies directly.
+    /// </summary>
+    internal class MockHandler : HttpMessageHandler
+    {
+        private readonly Func<HttpRequestMessage, LetterboxdHttpClient, HttpResponseMessage> _responder;
+        private LetterboxdHttpClient? _httpClient;
+
+        public MockHandler(Func<HttpRequestMessage, LetterboxdHttpClient, HttpResponseMessage> responder)
             => _responder = responder;
 
-        public LetterboxdClient CreateClient(ILogger logger)
+        public (LetterboxdHttpClient Http, LetterboxdAuth Auth, LetterboxdScraper Scraper, LetterboxdDiary Diary) CreateClients(ILogger logger)
         {
-            var client = new LetterboxdClient(logger, this);
-            _client = client;
-            return client;
+            var http = new LetterboxdHttpClient(logger, this);
+            _httpClient = http;
+            var auth = new LetterboxdAuth(http, logger);
+            var scraper = new LetterboxdScraper(http, logger);
+            var diary = new LetterboxdDiary(http, auth, scraper, logger);
+            return (http, auth, scraper, diary);
         }
 
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request, CancellationToken cancellationToken)
-            => Task.FromResult(_responder(request, _client!));
+            => Task.FromResult(_responder(request, _httpClient!));
     }
 }
