@@ -56,6 +56,7 @@ public class SyncTask : IScheduledTask
                 continue;
 
             _logger.LogInformation("Starting Letterboxd sync for {Username}", user.Username);
+            SyncProgress.Start("Letterboxd Sync", "Authenticating");
 
             List<MediaBrowser.Controller.Entities.BaseItem> movies = _libraryManager.GetItemList(new InternalItemsQuery(user)
             {
@@ -67,7 +68,6 @@ public class SyncTask : IScheduledTask
             if (movies.Count == 0)
                 continue;
 
-            // Apply date filter if enabled
             if (account.EnableDateFilter)
             {
                 var cutoff = DateTime.UtcNow.AddDays(-account.DateFilterDays);
@@ -81,11 +81,15 @@ public class SyncTask : IScheduledTask
             if (movies.Count == 0)
                 continue;
 
-            using var client = new LetterboxdClient(_logger);
+            using var httpClient = new LetterboxdHttpClient(_logger);
+            var auth = new LetterboxdAuth(httpClient, _logger);
+            var scraper = new LetterboxdScraper(httpClient, _logger);
+            var diary = new LetterboxdDiary(httpClient, auth, scraper, _logger);
+
             try
             {
-                client.SetRawCookies(account.RawCookies);
-                await client.AuthenticateAsync(account.LetterboxdUsername, account.LetterboxdPassword)
+                httpClient.SetRawCookies(account.RawCookies);
+                await auth.AuthenticateAsync(account.LetterboxdUsername, account.LetterboxdPassword)
                     .ConfigureAwait(false);
             }
             catch (Exception ex)
@@ -97,6 +101,9 @@ public class SyncTask : IScheduledTask
             var synced = 0;
             var skipped = 0;
             var failed = 0;
+
+            SyncProgress.SetPhase("Syncing films");
+            SyncProgress.SetTotal(movies.Count);
 
             foreach (var movie in movies)
             {
@@ -112,15 +119,14 @@ public class SyncTask : IScheduledTask
 
                 try
                 {
-                    var film = await client.LookupFilmByTmdbIdAsync(tmdbId).ConfigureAwait(false);
+                    var film = await scraper.LookupFilmByTmdbIdAsync(tmdbId).ConfigureAwait(false);
                     await Task.Delay(3000 + Random.Shared.Next(2000), cancellationToken).ConfigureAwait(false);
 
                     var userData = _userDataManager.GetUserData(user, movie);
                     var viewingDate = userData?.LastPlayedDate?.Date ?? DateTime.Now.Date;
 
-                    // Check diary for duplicates and rewatch detection
-                    var diary = await client.GetDiaryInfoAsync(film.Slug).ConfigureAwait(false);
-                    if (diary.LastDate != null && diary.LastDate.Value.Date == viewingDate)
+                    var diaryInfo = await scraper.GetDiaryInfoAsync(film.Slug, account.LetterboxdUsername).ConfigureAwait(false);
+                    if (Helpers.IsDuplicate(diaryInfo.LastDate, viewingDate))
                     {
                         _logger.LogDebug("{Title} already logged on {Date}, skipping",
                             movie.Name, viewingDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
@@ -134,33 +140,22 @@ public class SyncTask : IScheduledTask
                         continue;
                     }
 
-                    // Scheduled sync never marks as rewatch — it's for catching up, not real playback.
-                    // Only the real-time PlaybackHandler marks rewatches.
+                    // Scheduled sync never marks as rewatch
                     bool isRewatch = false;
                     bool liked = account.SyncFavorites && (userData?.IsFavorite ?? false);
+                    double? lbRating = Helpers.MapRating(userData?.Rating);
 
-                    // Map Jellyfin rating (0-10) to Letterboxd (0.5-5.0 in 0.5 steps)
-                    double? lbRating = null;
-                    if (userData?.Rating.HasValue == true)
-                    {
-                        var mapped = Math.Round(userData.Rating.Value / 2.0 * 2) / 2.0;
-                        lbRating = Math.Clamp(mapped, 0.5, 5.0);
-                    }
-
-                    await client.MarkAsWatchedAsync(film.Slug, film.FilmId, userData?.LastPlayedDate, liked,
+                    await diary.MarkAsWatchedAsync(film.Slug, film.FilmId, userData?.LastPlayedDate, liked,
                         film.ProductionId, isRewatch, lbRating).ConfigureAwait(false);
 
-                    var logMsg = isRewatch ? "Logged rewatch of" : "Logged";
-                    _logger.LogInformation("{Action} {Title} (TMDb:{TmdbId}) to Letterboxd for {Username} on {Date}",
-                        logMsg, movie.Name, tmdbId, user.Username,
+                    _logger.LogInformation("Logged {Title} (TMDb:{TmdbId}) to Letterboxd for {Username} on {Date}",
+                        movie.Name, tmdbId, user.Username,
                         viewingDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
                     SyncHistory.Record(new SyncEvent
                     {
                         FilmTitle = movie.Name, FilmSlug = film.Slug, TmdbId = tmdbId,
                         Username = user.Username, Timestamp = DateTime.UtcNow,
-                        ViewingDate = viewingDate,
-                        Status = isRewatch ? SyncStatus.Rewatch : SyncStatus.Success,
-                        Source = "scheduled"
+                        ViewingDate = viewingDate, Status = SyncStatus.Success, Source = "scheduled"
                     });
                     synced++;
                 }
@@ -180,6 +175,7 @@ public class SyncTask : IScheduledTask
 
             _logger.LogInformation("Letterboxd sync complete for {Username}: {Synced} synced, {Skipped} skipped, {Failed} failed",
                 user.Username, synced, skipped, failed);
+            SyncProgress.Complete();
 
             processedUsers++;
             progress.Report((double)processedUsers / users.Count * 100);

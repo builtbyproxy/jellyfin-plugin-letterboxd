@@ -28,11 +28,33 @@ public class LetterboxdController : ControllerBase
 
     private static PluginConfiguration Config => Plugin.Instance!.Configuration;
 
+    private string? GetCurrentUserId()
+        => User.Claims.FirstOrDefault(c => c.Type == "Jellyfin-UserId")?.Value?.Replace("-", "");
+
+    private string? GetJellyfinUsername()
+    {
+        var userId = GetCurrentUserId();
+        if (string.IsNullOrEmpty(userId)) return null;
+
+        // Resolve Jellyfin user ID to username for SyncHistory filtering
+        // SyncHistory stores the Jellyfin username (e.g. "lachlan"), not the Letterboxd username
+        var user = _userManager.Users.FirstOrDefault(u => u.Id.ToString("N") == userId);
+        return user?.Username;
+    }
+
+    [HttpGet("Progress")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public ActionResult GetProgress()
+    {
+        return Ok(SyncProgress.GetSnapshot());
+    }
+
     [HttpGet("Stats")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public ActionResult GetStats()
     {
-        var (total, success, failed, skipped, rewatches) = SyncHistory.GetStats();
+        var jellyfinUsername = GetJellyfinUsername();
+        var (total, success, failed, skipped, rewatches) = SyncHistory.GetStats(jellyfinUsername);
         return Ok(new
         {
             total,
@@ -47,7 +69,8 @@ public class LetterboxdController : ControllerBase
     [ProducesResponseType(StatusCodes.Status200OK)]
     public ActionResult GetHistory([FromQuery] int count = 50)
     {
-        var events = SyncHistory.GetRecent(Math.Min(count, 200));
+        var jellyfinUsername = GetJellyfinUsername();
+        var events = SyncHistory.GetRecent(Math.Min(count, 200), jellyfinUsername);
         return Ok(events);
     }
 
@@ -62,31 +85,34 @@ public class LetterboxdController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.ReviewText) && !request.IsRewatch)
             return BadRequest(new { error = "reviewText is required unless logging a rewatch" });
 
-        var userId = User.Claims.FirstOrDefault(c => c.Type == "Jellyfin-UserId")?.Value;
+        var userId = GetCurrentUserId();
         if (string.IsNullOrEmpty(userId))
             return BadRequest(new { error = "Could not determine user" });
 
         var account = Config.Accounts.FirstOrDefault(
-            a => a.Enabled && a.UserJellyfinId == userId.Replace("-", ""));
+            a => a.Enabled && a.UserJellyfinId == userId);
 
         if (account == null)
             return BadRequest(new { error = "No Letterboxd account configured for this user" });
 
-        using var client = new LetterboxdClient(_logger);
+        using var httpClient = new LetterboxdHttpClient(_logger);
+        var auth = new LetterboxdAuth(httpClient, _logger);
+        var scraper = new LetterboxdScraper(httpClient, _logger);
+        var diary = new LetterboxdDiary(httpClient, auth, scraper, _logger);
+
         try
         {
-            client.SetRawCookies(account.RawCookies);
-            await client.AuthenticateAsync(account.LetterboxdUsername, account.LetterboxdPassword)
+            httpClient.SetRawCookies(account.RawCookies);
+            await auth.AuthenticateAsync(account.LetterboxdUsername, account.LetterboxdPassword)
                 .ConfigureAwait(false);
 
-            await client.PostReviewAsync(request.FilmSlug, request.ReviewText, request.ContainsSpoilers, request.IsRewatch, request.Date, request.Rating)
+            await diary.PostReviewAsync(request.FilmSlug, request.ReviewText, request.ContainsSpoilers, request.IsRewatch, request.Date, request.Rating)
                 .ConfigureAwait(false);
 
             _logger.LogInformation("Posted review for {FilmSlug} by {Username}",
                 request.FilmSlug, account.LetterboxdUsername);
 
             var status = request.IsRewatch ? SyncStatus.Rewatch : SyncStatus.Success;
-            var label = request.IsRewatch ? "Rewatch + review" : "Review";
             SyncHistory.Record(new SyncEvent
             {
                 FilmTitle = request.FilmSlug.Replace("-", " "),
@@ -107,7 +133,7 @@ public class LetterboxdController : ControllerBase
             {
                 FilmTitle = request.FilmSlug.Replace("-", " "),
                 FilmSlug = request.FilmSlug,
-                Username = account?.LetterboxdUsername ?? "unknown",
+                Username = account.LetterboxdUsername,
                 Timestamp = DateTime.UtcNow,
                 Status = SyncStatus.Failed,
                 Error = ex.Message,
