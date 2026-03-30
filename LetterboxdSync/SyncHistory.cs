@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
+using Microsoft.Extensions.Logging;
 
 namespace LetterboxdSync;
 
@@ -24,7 +26,7 @@ public class SyncEvent
     public DateTime? ViewingDate { get; set; }
     public SyncStatus Status { get; set; }
     public string? Error { get; set; }
-    public string? Source { get; set; } // "playback" or "scheduled"
+    public string? Source { get; set; }
 }
 
 public static class SyncHistory
@@ -32,27 +34,27 @@ public static class SyncHistory
     private static readonly object _lock = new();
     private static List<SyncEvent>? _events;
     private const int MaxEvents = 500;
+    private static ILogger? _logger;
+
+    public static void SetLogger(ILogger logger) => _logger = logger;
 
     private static string DataPath
     {
         get
         {
-            // Store in the configurations directory — survives version upgrades
-            // This is where LetterboxdSync.xml lives: /config/data/plugins/configurations/
             var assembly = typeof(SyncHistory).Assembly.Location;
             var pluginDir = Path.GetDirectoryName(assembly);
             if (!string.IsNullOrEmpty(pluginDir))
             {
                 var configDir = Path.Combine(pluginDir, "..", "configurations");
                 if (Directory.Exists(configDir))
-                    return Path.Combine(configDir, "letterboxd-sync-history.json");
+                    return Path.Combine(configDir, "letterboxd-sync-history.jsonl");
             }
 
-            // Fallback: next to the DLL
             if (!string.IsNullOrEmpty(pluginDir))
-                return Path.Combine(pluginDir, "sync-history.json");
+                return Path.Combine(pluginDir, "sync-history.jsonl");
 
-            return "sync-history.json";
+            return "sync-history.jsonl";
         }
     }
 
@@ -60,38 +62,63 @@ public static class SyncHistory
     {
         if (_events != null) return _events;
 
+        _events = new List<SyncEvent>();
+
         try
         {
-            if (File.Exists(DataPath))
+            var jsonlPath = DataPath;
+            if (File.Exists(jsonlPath))
             {
-                var json = File.ReadAllText(DataPath);
-                _events = JsonSerializer.Deserialize<List<SyncEvent>>(json) ?? new List<SyncEvent>();
+                foreach (var line in File.ReadLines(jsonlPath))
+                {
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+                    try
+                    {
+                        var evt = JsonSerializer.Deserialize<SyncEvent>(line);
+                        if (evt != null) _events.Add(evt);
+                    }
+                    catch { }
+                }
                 return _events;
             }
-        }
-        catch { }
 
-        _events = new List<SyncEvent>();
+            // Migrate from old JSON format if it exists
+            var legacyPath = jsonlPath.Replace(".jsonl", ".json");
+            if (File.Exists(legacyPath))
+            {
+                var json = File.ReadAllText(legacyPath);
+                _events = JsonSerializer.Deserialize<List<SyncEvent>>(json) ?? new List<SyncEvent>();
+                // Write in new JSONL format
+                SaveAllEvents();
+                _logger?.LogInformation("Migrated {Count} sync history events from JSON to JSONL", _events.Count);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Failed to load sync history from {Path}", DataPath);
+        }
+
         return _events;
     }
 
-    private static void SaveEvents()
+    private static void SaveAllEvents()
     {
         try
         {
             var path = DataPath;
-            Console.WriteLine($"[LetterboxdSync] Saving sync history to: {path}");
             var dir = Path.GetDirectoryName(path);
             if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
                 Directory.CreateDirectory(dir);
 
-            var json = JsonSerializer.Serialize(_events, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(path, json);
-            Console.WriteLine($"[LetterboxdSync] Saved {_events?.Count ?? 0} events to sync history");
+            using var writer = new StreamWriter(path, append: false);
+            foreach (var evt in _events!)
+            {
+                writer.WriteLine(JsonSerializer.Serialize(evt));
+            }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[LetterboxdSync] Failed to save sync history: {ex.Message}");
+            _logger?.LogError(ex, "Failed to save sync history to {Path}", DataPath);
         }
     }
 
@@ -100,36 +127,71 @@ public static class SyncHistory
         lock (_lock)
         {
             var events = LoadEvents();
-            events.Insert(0, evt);
+            events.Add(evt);
 
-            // Trim to max
-            if (events.Count > MaxEvents)
+            // Trim oldest events if over the cap
+            bool trimmed = events.Count > MaxEvents;
+            if (trimmed)
+            {
+                events.Sort((a, b) => b.Timestamp.CompareTo(a.Timestamp));
                 events.RemoveRange(MaxEvents, events.Count - MaxEvents);
+            }
 
-            SaveEvents();
+            try
+            {
+                var path = DataPath;
+                var dir = Path.GetDirectoryName(path);
+                if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                    Directory.CreateDirectory(dir);
+
+                if (trimmed)
+                {
+                    // Full rewrite only when events were actually trimmed
+                    SaveAllEvents();
+                }
+                else
+                {
+                    File.AppendAllText(path, JsonSerializer.Serialize(evt) + Environment.NewLine);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "Failed to append sync event to {Path}", DataPath);
+            }
         }
     }
 
-    public static List<SyncEvent> GetRecent(int count = 100)
+    public static List<SyncEvent> GetRecent(int count = 100, string? username = null)
     {
         lock (_lock)
         {
             var events = LoadEvents();
-            return events.GetRange(0, Math.Min(count, events.Count));
+            IEnumerable<SyncEvent> filtered = events;
+
+            if (!string.IsNullOrEmpty(username))
+                filtered = filtered.Where(e => e.Username == username);
+
+            return filtered.OrderByDescending(e => e.Timestamp).Take(count).ToList();
         }
     }
 
-    public static (int Total, int Success, int Failed, int Skipped, int Rewatches) GetStats()
+    public static (int Total, int Success, int Failed, int Skipped, int Rewatches) GetStats(string? username = null)
     {
         lock (_lock)
         {
             var events = LoadEvents();
+            IEnumerable<SyncEvent> filtered = events;
+
+            if (!string.IsNullOrEmpty(username))
+                filtered = filtered.Where(e => e.Username == username);
+
+            var list = filtered.ToList();
             return (
-                events.Count,
-                events.FindAll(e => e.Status == SyncStatus.Success).Count,
-                events.FindAll(e => e.Status == SyncStatus.Failed).Count,
-                events.FindAll(e => e.Status == SyncStatus.Skipped).Count,
-                events.FindAll(e => e.Status == SyncStatus.Rewatch).Count
+                list.Count,
+                list.Count(e => e.Status == SyncStatus.Success),
+                list.Count(e => e.Status == SyncStatus.Failed),
+                list.Count(e => e.Status == SyncStatus.Skipped),
+                list.Count(e => e.Status == SyncStatus.Rewatch)
             );
         }
     }
