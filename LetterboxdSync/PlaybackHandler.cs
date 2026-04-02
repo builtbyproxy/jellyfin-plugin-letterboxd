@@ -83,20 +83,23 @@ public class PlaybackHandler : IHostedService, IDisposable
             _logger.LogInformation("Syncing {Title} (TMDb:{TmdbId}) to Letterboxd for {Username}",
                 e.Item.Name, tmdbId, user.Username);
 
-            using var client = new LetterboxdClient(_logger);
+            using var httpClient = new LetterboxdHttpClient(_logger);
+            var auth = new LetterboxdAuth(httpClient, _logger);
+            var scraper = new LetterboxdScraper(httpClient, _logger);
+            var diary = new LetterboxdDiary(httpClient, auth, scraper, _logger);
+
             try
             {
-                client.SetRawCookies(account.RawCookies);
-                await client.AuthenticateAsync(account.LetterboxdUsername, account.LetterboxdPassword)
+                httpClient.SetRawCookies(account.RawCookies);
+                await auth.AuthenticateAsync(account.LetterboxdUsername, account.LetterboxdPassword)
                     .ConfigureAwait(false);
 
-                var film = await client.LookupFilmByTmdbIdAsync(tmdbId).ConfigureAwait(false);
-
-                // Check diary for duplicates and rewatch detection
-                var diary = await client.GetDiaryInfoAsync(film.Slug).ConfigureAwait(false);
+                var film = await scraper.LookupFilmByTmdbIdAsync(tmdbId).ConfigureAwait(false);
                 var viewingDate = DateTime.Now.Date;
 
-                if (diary.LastDate != null && diary.LastDate.Value.Date == viewingDate)
+                var diaryInfo = await scraper.GetDiaryInfoAsync(film.Slug, account.LetterboxdUsername).ConfigureAwait(false);
+
+                if (Helpers.IsDuplicate(diaryInfo.LastDate, viewingDate))
                 {
                     _logger.LogInformation("{Title} already logged on Letterboxd for {Date}, skipping",
                         e.Item.Name, viewingDate.ToString("yyyy-MM-dd"));
@@ -109,20 +112,12 @@ public class PlaybackHandler : IHostedService, IDisposable
                     continue;
                 }
 
-                bool isRewatch = diary.HasAnyEntry
-                    && diary.LastDate.HasValue
-                    && (viewingDate - diary.LastDate.Value.Date).TotalDays > 1;
+                bool isRewatch = Helpers.IsRewatch(diaryInfo.LastDate, viewingDate);
                 var userData = _userDataManager.GetUserData(user, e.Item!);
                 bool liked = account.SyncFavorites && (userData?.IsFavorite ?? false);
+                double? lbRating = Helpers.MapRating(userData?.Rating);
 
-                double? lbRating = null;
-                if (userData?.Rating.HasValue == true)
-                {
-                    var mapped = Math.Round(userData.Rating.Value / 2.0 * 2) / 2.0;
-                    lbRating = Math.Clamp(mapped, 0.5, 5.0);
-                }
-
-                await client.MarkAsWatchedAsync(film.Slug, film.FilmId, DateTime.Now, liked,
+                await diary.MarkAsWatchedAsync(film.Slug, film.FilmId, DateTime.Now, liked,
                     film.ProductionId, isRewatch, lbRating).ConfigureAwait(false);
 
                 var action = isRewatch ? "Logged rewatch of" : "Logged";

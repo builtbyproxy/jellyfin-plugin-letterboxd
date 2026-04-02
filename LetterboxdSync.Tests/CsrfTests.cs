@@ -15,7 +15,7 @@ public class CsrfTests
             </form>
         </body></html>";
 
-        var result = LetterboxdClient.ExtractHiddenInput(html, "__csrf");
+        var result = LetterboxdHttpClient.ExtractHiddenInput(html, "__csrf");
         Assert.Equal("abc123def456", result);
     }
 
@@ -24,7 +24,7 @@ public class CsrfTests
     {
         var html = @"<html><body><p>No form here</p></body></html>";
 
-        var result = LetterboxdClient.ExtractHiddenInput(html, "__csrf");
+        var result = LetterboxdHttpClient.ExtractHiddenInput(html, "__csrf");
         Assert.Null(result);
     }
 
@@ -38,7 +38,7 @@ public class CsrfTests
             <input type=""password"" name=""password"" />
         </form>";
 
-        var result = LetterboxdClient.ExtractHiddenInput(html, "__csrf");
+        var result = LetterboxdHttpClient.ExtractHiddenInput(html, "__csrf");
         Assert.Equal("a1b2c3d4e5f6", result);
     }
 
@@ -47,7 +47,7 @@ public class CsrfTests
     {
         var html = @"<input type=""hidden"" name=""__csrf"" value=""a&amp;b&lt;c"" />";
 
-        var result = LetterboxdClient.ExtractHiddenInput(html, "__csrf");
+        var result = LetterboxdHttpClient.ExtractHiddenInput(html, "__csrf");
         Assert.Equal("a&b<c", result);
     }
 }

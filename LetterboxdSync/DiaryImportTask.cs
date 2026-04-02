@@ -54,12 +54,16 @@ public class DiaryImportTask : IScheduledTask
                 continue;
 
             _logger.LogInformation("Starting diary import for {Username}", user.Username);
+            SyncProgress.Start("Diary Import", "Authenticating");
 
-            using var client = new LetterboxdClient(_logger);
+            using var httpClient = new LetterboxdHttpClient(_logger);
+            var auth = new LetterboxdAuth(httpClient, _logger);
+            var scraper = new LetterboxdScraper(httpClient, _logger);
+
             try
             {
-                client.SetRawCookies(account.RawCookies);
-                await client.AuthenticateAsync(account.LetterboxdUsername, account.LetterboxdPassword)
+                httpClient.SetRawCookies(account.RawCookies);
+                await auth.AuthenticateAsync(account.LetterboxdUsername, account.LetterboxdPassword)
                     .ConfigureAwait(false);
             }
             catch (Exception ex)
@@ -71,7 +75,8 @@ public class DiaryImportTask : IScheduledTask
             List<int> diaryTmdbIds;
             try
             {
-                diaryTmdbIds = await client.GetDiaryTmdbIdsAsync(account.LetterboxdUsername).ConfigureAwait(false);
+                SyncProgress.SetPhase("Scanning Letterboxd films");
+                diaryTmdbIds = await scraper.GetDiaryTmdbIdsAsync(account.LetterboxdUsername).ConfigureAwait(false);
                 _logger.LogInformation("Found {Count} films in {Username}'s Letterboxd diary",
                     diaryTmdbIds.Count, account.LetterboxdUsername);
             }
@@ -84,7 +89,6 @@ public class DiaryImportTask : IScheduledTask
             if (diaryTmdbIds.Count == 0)
                 continue;
 
-            // Find unplayed movies in Jellyfin that are in the Letterboxd diary
             var unplayedMovies = _libraryManager.GetItemList(new InternalItemsQuery(user)
             {
                 IncludeItemTypes = new[] { BaseItemKind.Movie },
@@ -103,8 +107,11 @@ public class DiaryImportTask : IScheduledTask
 
                 var userData = _userDataManager.GetUserData(user, movie);
                 if (userData == null) continue;
+
+                // Only set Played=true, do NOT set LastPlayedDate.
+                // Setting LastPlayedDate would cause SyncTask to re-export this film
+                // back to Letterboxd, creating a sync loop.
                 userData.Played = true;
-                userData.LastPlayedDate = DateTime.UtcNow;
                 _userDataManager.SaveUserData(user, movie, userData, UserDataSaveReason.Import, cancellationToken);
 
                 _logger.LogInformation("Marked {Title} as played for {Username} (from Letterboxd diary)",
@@ -114,6 +121,7 @@ public class DiaryImportTask : IScheduledTask
 
             _logger.LogInformation("Diary import complete for {Username}: {Marked} films marked as played",
                 user.Username, marked);
+            SyncProgress.Complete();
         }
 
         progress.Report(100);

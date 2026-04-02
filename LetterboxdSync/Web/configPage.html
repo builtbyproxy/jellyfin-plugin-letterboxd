@@ -70,9 +70,15 @@
 
                 <!-- DASHBOARD TAB -->
                 <div id="tab-stats" class="lb-tab-content">
-                    <div style="display:flex;align-items:center;gap:1em;margin-bottom:1.5em;">
+                    <div style="display:flex;align-items:center;gap:1em;margin-bottom:0.5em;">
                         <button type="button" class="lb-btn lb-btn-primary" id="runSyncBtn">Run Sync Now</button>
                         <span id="syncStatus" class="c-muted" style="font-size:0.9em;"></span>
+                    </div>
+                    <div id="syncProgressBar" style="display:none;margin-bottom:1.5em;">
+                        <div style="background:#2a2a2a;border-radius:4px;height:6px;overflow:hidden;margin-bottom:0.3em;">
+                            <div id="progressFill" style="background:#00e054;height:100%;width:0%;transition:width 0.5s ease;"></div>
+                        </div>
+                        <span id="progressDetail" class="c-muted" style="font-size:0.8em;"></span>
                     </div>
 
                     <div class="lb-stat-cards">
@@ -320,11 +326,14 @@
                         checkSyncRunning: function () {
                             var self = this;
                             ApiClient.getJSON(ApiClient.getUrl('ScheduledTasks')).then(function (tasks) {
-                                var task = tasks.find(function (t) { return t.Key === 'LetterboxdSync'; });
-                                if (task && task.State === 'Running') {
+                                var syncTask = tasks.find(function (t) { return t.Key === 'LetterboxdSync'; });
+                                var diaryTask = tasks.find(function (t) { return t.Key === 'LetterboxdDiaryImport'; });
+                                var running = (syncTask && syncTask.State === 'Running') ? syncTask :
+                                              (diaryTask && diaryTask.State === 'Running') ? diaryTask : null;
+                                if (running) {
                                     document.getElementById('runSyncBtn').disabled = true;
                                     document.getElementById('syncStatus').innerHTML = '<span class="c-green">Sync in progress...</span>';
-                                    self.pollTask(task.Id);
+                                    self.pollTask(running.Id);
                                 }
                             });
                         },
@@ -333,17 +342,43 @@
                             var self = this;
                             if (self.syncPoll) clearInterval(self.syncPoll);
                             self.syncPoll = setInterval(function () {
+                                // Poll task state
                                 ApiClient.getJSON(ApiClient.getUrl('ScheduledTasks/' + taskId)).then(function (t) {
                                     if (t.State === 'Idle') {
                                         clearInterval(self.syncPoll);
                                         self.syncPoll = null;
                                         document.getElementById('runSyncBtn').disabled = false;
                                         document.getElementById('syncStatus').innerHTML = '<span class="c-green">Done!</span>';
+                                        document.getElementById('syncProgressBar').style.display = 'none';
                                         self.loadStats();
                                         self.loadHistory();
                                     }
                                 });
-                            }, 5000);
+                                // Poll progress
+                                ApiClient.getJSON(ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/Progress')).then(function (p) {
+                                    if (!p || !p.isRunning) return;
+                                    var bar = document.getElementById('syncProgressBar');
+                                    bar.style.display = 'block';
+                                    var phase = p.phase || '';
+                                    var detail = '';
+                                    if (p.totalItems > 0) {
+                                        var pct = Math.round((p.processedItems / p.totalItems) * 100);
+                                        document.getElementById('progressFill').style.width = pct + '%';
+                                        detail = p.processedItems + '/' + p.totalItems + ' films';
+                                    } else if (p.processedItems > 0) {
+                                        detail = p.processedItems + ' films resolved';
+                                    }
+                                    if (p.cacheHits > 0) {
+                                        detail += ' (' + p.cacheHits + ' cached)';
+                                    }
+                                    var elapsed = p.elapsedSeconds || 0;
+                                    var mins = Math.floor(elapsed / 60);
+                                    var secs = elapsed % 60;
+                                    var timeStr = mins > 0 ? mins + 'm ' + secs + 's' : secs + 's';
+                                    document.getElementById('syncStatus').innerHTML = '<span class="c-green">' + phase + '</span>';
+                                    document.getElementById('progressDetail').textContent = detail + ' \u2022 ' + timeStr;
+                                }).catch(function () {});
+                            }, 3000);
                         },
 
                         runSync: function () {
