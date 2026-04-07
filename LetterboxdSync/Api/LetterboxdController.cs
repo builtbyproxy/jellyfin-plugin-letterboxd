@@ -74,6 +74,106 @@ public class LetterboxdController : ControllerBase
         return Ok(events);
     }
 
+    [HttpGet("Account")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public ActionResult GetAccount()
+    {
+        var userId = GetCurrentUserId();
+        if (string.IsNullOrEmpty(userId))
+            return BadRequest(new { error = "Could not determine user" });
+
+        var account = Config.Accounts.FirstOrDefault(a => a.UserJellyfinId == userId);
+        if (account == null)
+        {
+            return Ok(new
+            {
+                letterboxdUsername = string.Empty,
+                letterboxdPassword = string.Empty,
+                rawCookies = (string?)null,
+                enabled = false,
+                syncFavorites = false,
+                enableDateFilter = false,
+                dateFilterDays = 7,
+                enableWatchlistSync = false,
+                enableDiaryImport = false,
+                isConfigured = false
+            });
+        }
+
+        return Ok(new
+        {
+            letterboxdUsername = account.LetterboxdUsername,
+            letterboxdPassword = account.LetterboxdPassword,
+            rawCookies = account.RawCookies,
+            enabled = account.Enabled,
+            syncFavorites = account.SyncFavorites,
+            enableDateFilter = account.EnableDateFilter,
+            dateFilterDays = account.DateFilterDays,
+            enableWatchlistSync = account.EnableWatchlistSync,
+            enableDiaryImport = account.EnableDiaryImport,
+            isConfigured = true
+        });
+    }
+
+    [HttpPut("Account")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public ActionResult PutAccount([FromBody] AccountUpdateRequest request)
+    {
+        var userId = GetCurrentUserId();
+        if (string.IsNullOrEmpty(userId))
+            return BadRequest(new { error = "Could not determine user" });
+
+        var account = Config.Accounts.FirstOrDefault(a => a.UserJellyfinId == userId);
+        if (account == null)
+        {
+            account = new Account { UserJellyfinId = userId };
+            Config.Accounts.Add(account);
+        }
+
+        account.LetterboxdUsername = request.LetterboxdUsername;
+        account.LetterboxdPassword = request.LetterboxdPassword;
+        account.RawCookies = request.RawCookies;
+        account.Enabled = request.Enabled;
+        account.SyncFavorites = request.SyncFavorites;
+        account.EnableDateFilter = request.EnableDateFilter;
+        account.DateFilterDays = request.DateFilterDays;
+        account.EnableWatchlistSync = request.EnableWatchlistSync;
+        account.EnableDiaryImport = request.EnableDiaryImport;
+
+        Plugin.Instance!.SaveConfiguration();
+        _logger.LogInformation("User {UserId} saved their Letterboxd account settings", userId);
+
+        return Ok(new { success = true });
+    }
+
+    [HttpPost("TestConnection")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult> TestConnection([FromBody] TestConnectionRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.LetterboxdUsername) || string.IsNullOrWhiteSpace(request.LetterboxdPassword))
+            return BadRequest(new { success = false, error = "Username and password are required" });
+
+        try
+        {
+            using var httpClient = new LetterboxdHttpClient(_logger);
+            var auth = new LetterboxdAuth(httpClient, _logger);
+
+            httpClient.SetRawCookies(request.RawCookies);
+            await auth.AuthenticateAsync(request.LetterboxdUsername, request.LetterboxdPassword)
+                .ConfigureAwait(false);
+
+            return Ok(new { success = true, letterboxdUsername = request.LetterboxdUsername });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("Test connection failed for {Username}: {Message}", request.LetterboxdUsername, ex.Message);
+            return BadRequest(new { success = false, error = ex.Message });
+        }
+    }
+
     [HttpPost("Review")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -112,12 +212,13 @@ public class LetterboxdController : ControllerBase
             _logger.LogInformation("Posted review for {FilmSlug} by {Username}",
                 request.FilmSlug, account.LetterboxdUsername);
 
+            var jellyfinUsername = GetJellyfinUsername() ?? account.LetterboxdUsername;
             var status = request.IsRewatch ? SyncStatus.Rewatch : SyncStatus.Success;
             SyncHistory.Record(new SyncEvent
             {
                 FilmTitle = request.FilmSlug.Replace("-", " "),
                 FilmSlug = request.FilmSlug,
-                Username = account.LetterboxdUsername,
+                Username = jellyfinUsername,
                 Timestamp = DateTime.UtcNow,
                 Status = status,
                 Source = "review"
@@ -129,11 +230,12 @@ public class LetterboxdController : ControllerBase
         {
             _logger.LogError("Failed to post review for {FilmSlug}: {Message}", request.FilmSlug, ex.Message);
 
+            var jellyfinUsernameForError = GetJellyfinUsername() ?? account.LetterboxdUsername;
             SyncHistory.Record(new SyncEvent
             {
                 FilmTitle = request.FilmSlug.Replace("-", " "),
                 FilmSlug = request.FilmSlug,
-                Username = account.LetterboxdUsername,
+                Username = jellyfinUsernameForError,
                 Timestamp = DateTime.UtcNow,
                 Status = SyncStatus.Failed,
                 Error = ex.Message,
