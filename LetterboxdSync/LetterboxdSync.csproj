@@ -6,8 +6,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
-    <AssemblyVersion>1.4.0.0</AssemblyVersion>
-    <FileVersion>1.4.0.0</FileVersion>
+    <AssemblyVersion>1.5.0.0</AssemblyVersion>
+    <FileVersion>1.5.0.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -18,12 +18,15 @@
     <PackageReference Include="HtmlAgilityPack" Version="1.6.11" />
     <PackageReference Include="Jellyfin.Controller" Version="10.11.0" />
     <PackageReference Include="Jellyfin.Model" Version="10.11.0" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="Web\configPage.html" />
     <EmbeddedResource Include="Web\configPage.js" />
     <EmbeddedResource Include="Web\statsPage.html" />
+    <EmbeddedResource Include="Web\userPage.html" />
+    <EmbeddedResource Include="Web\sidebar.js" />
   </ItemGroup>
 
 </Project>
