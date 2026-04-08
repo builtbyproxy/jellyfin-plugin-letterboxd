@@ -12,7 +12,7 @@
         "changelog": "User self-service account setup, sidebar link for all users, test connection button, standalone user page via File Transformation injection",
         "targetAbi": "10.11.0.0",
         "sourceUrl": "https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/releases/download/v1.5.0/jellyfin-plugin-letterboxd-v1.5.0.zip",
-        "checksum": "PLACEHOLDER",
+        "checksum": "2a12387b19461de7dd49b4da5f03c513",
         "timestamp": "2026-04-07T00:00:00Z"
       },
       {
