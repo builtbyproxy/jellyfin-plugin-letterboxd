@@ -12,7 +12,7 @@
         "changelog": "Official Letterboxd API integration (primary) with web scraping fallback, eliminates Cloudflare 403 errors",
         "targetAbi": "10.11.0.0",
         "sourceUrl": "https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/releases/download/v1.6.0/jellyfin-plugin-letterboxd-v1.6.0.zip",
-        "checksum": "PLACEHOLDER",
+        "checksum": "5de13fa5256243bb0fc4b81f848cdd13",
         "timestamp": "2026-04-07T00:00:00Z"
       },
       {
