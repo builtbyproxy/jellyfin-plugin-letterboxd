@@ -56,14 +56,11 @@ public class DiaryImportTask : IScheduledTask
             _logger.LogInformation("Starting diary import for {Username}", user.Username);
             SyncProgress.Start("Diary Import", "Authenticating");
 
-            using var httpClient = new LetterboxdHttpClient(_logger);
-            var auth = new LetterboxdAuth(httpClient, _logger);
-            var scraper = new LetterboxdScraper(httpClient, _logger);
-
+            ILetterboxdService service;
             try
             {
-                httpClient.SetRawCookies(account.RawCookies);
-                await auth.AuthenticateAsync(account.LetterboxdUsername, account.LetterboxdPassword)
+                service = await LetterboxdServiceFactory.CreateAuthenticatedAsync(
+                    account.LetterboxdUsername, account.LetterboxdPassword, account.RawCookies, _logger)
                     .ConfigureAwait(false);
             }
             catch (Exception ex)
@@ -72,11 +69,13 @@ public class DiaryImportTask : IScheduledTask
                 continue;
             }
 
+            using var _s = service;
+
             List<int> diaryTmdbIds;
             try
             {
                 SyncProgress.SetPhase("Scanning Letterboxd films");
-                diaryTmdbIds = await scraper.GetDiaryTmdbIdsAsync(account.LetterboxdUsername).ConfigureAwait(false);
+                diaryTmdbIds = await service.GetDiaryTmdbIdsAsync(account.LetterboxdUsername).ConfigureAwait(false);
                 _logger.LogInformation("Found {Count} films in {Username}'s Letterboxd diary",
                     diaryTmdbIds.Count, account.LetterboxdUsername);
             }
