@@ -57,14 +57,11 @@ public class WatchlistSyncTask : IScheduledTask
 
             _logger.LogInformation("Starting watchlist sync for {Username}", user.Username);
 
-            using var httpClient = new LetterboxdHttpClient(_logger);
-            var auth = new LetterboxdAuth(httpClient, _logger);
-            var scraper = new LetterboxdScraper(httpClient, _logger);
-
+            ILetterboxdService service;
             try
             {
-                httpClient.SetRawCookies(account.RawCookies);
-                await auth.AuthenticateAsync(account.LetterboxdUsername, account.LetterboxdPassword)
+                service = await LetterboxdServiceFactory.CreateAuthenticatedAsync(
+                    account.LetterboxdUsername, account.LetterboxdPassword, account.RawCookies, _logger)
                     .ConfigureAwait(false);
             }
             catch (Exception ex)
@@ -73,10 +70,12 @@ public class WatchlistSyncTask : IScheduledTask
                 continue;
             }
 
+            using var _s = service;
+
             List<int> tmdbIds;
             try
             {
-                tmdbIds = await scraper.GetWatchlistTmdbIdsAsync(account.LetterboxdUsername).ConfigureAwait(false);
+                tmdbIds = await service.GetWatchlistTmdbIdsAsync(account.LetterboxdUsername).ConfigureAwait(false);
                 _logger.LogInformation("Found {Count} films in {Username}'s Letterboxd watchlist",
                     tmdbIds.Count, account.LetterboxdUsername);
             }

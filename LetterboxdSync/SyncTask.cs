@@ -81,15 +81,11 @@ public class SyncTask : IScheduledTask
             if (movies.Count == 0)
                 continue;
 
-            using var httpClient = new LetterboxdHttpClient(_logger);
-            var auth = new LetterboxdAuth(httpClient, _logger);
-            var scraper = new LetterboxdScraper(httpClient, _logger);
-            var diary = new LetterboxdDiary(httpClient, auth, scraper, _logger);
-
+            ILetterboxdService service;
             try
             {
-                httpClient.SetRawCookies(account.RawCookies);
-                await auth.AuthenticateAsync(account.LetterboxdUsername, account.LetterboxdPassword)
+                service = await LetterboxdServiceFactory.CreateAuthenticatedAsync(
+                    account.LetterboxdUsername, account.LetterboxdPassword, account.RawCookies, _logger)
                     .ConfigureAwait(false);
             }
             catch (Exception ex)
@@ -97,6 +93,8 @@ public class SyncTask : IScheduledTask
                 _logger.LogError("Auth failed for {Username}: {Message}", user.Username, ex.Message);
                 continue;
             }
+
+            using var _ = service;
 
             var synced = 0;
             var skipped = 0;
@@ -119,13 +117,13 @@ public class SyncTask : IScheduledTask
 
                 try
                 {
-                    var film = await scraper.LookupFilmByTmdbIdAsync(tmdbId).ConfigureAwait(false);
+                    var film = await service.LookupFilmByTmdbIdAsync(tmdbId).ConfigureAwait(false);
                     await Task.Delay(3000 + Random.Shared.Next(2000), cancellationToken).ConfigureAwait(false);
 
                     var userData = _userDataManager.GetUserData(user, movie);
                     var viewingDate = userData?.LastPlayedDate?.Date ?? DateTime.Now.Date;
 
-                    var diaryInfo = await scraper.GetDiaryInfoAsync(film.Slug, account.LetterboxdUsername).ConfigureAwait(false);
+                    var diaryInfo = await service.GetDiaryInfoAsync(film.FilmId, account.LetterboxdUsername).ConfigureAwait(false);
                     if (Helpers.IsDuplicate(diaryInfo.LastDate, viewingDate))
                     {
                         _logger.LogDebug("{Title} already logged on {Date}, skipping",
@@ -145,7 +143,7 @@ public class SyncTask : IScheduledTask
                     bool liked = account.SyncFavorites && (userData?.IsFavorite ?? false);
                     double? lbRating = Helpers.MapRating(userData?.Rating);
 
-                    await diary.MarkAsWatchedAsync(film.Slug, film.FilmId, userData?.LastPlayedDate, liked,
+                    await service.MarkAsWatchedAsync(film.Slug, film.FilmId, userData?.LastPlayedDate, liked,
                         film.ProductionId, isRewatch, lbRating).ConfigureAwait(false);
 
                     _logger.LogInformation("Logged {Title} (TMDb:{TmdbId}) to Letterboxd for {Username} on {Date}",

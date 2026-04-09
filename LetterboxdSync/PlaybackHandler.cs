@@ -83,21 +83,16 @@ public class PlaybackHandler : IHostedService, IDisposable
             _logger.LogInformation("Syncing {Title} (TMDb:{TmdbId}) to Letterboxd for {Username}",
                 e.Item.Name, tmdbId, user.Username);
 
-            using var httpClient = new LetterboxdHttpClient(_logger);
-            var auth = new LetterboxdAuth(httpClient, _logger);
-            var scraper = new LetterboxdScraper(httpClient, _logger);
-            var diary = new LetterboxdDiary(httpClient, auth, scraper, _logger);
-
             try
             {
-                httpClient.SetRawCookies(account.RawCookies);
-                await auth.AuthenticateAsync(account.LetterboxdUsername, account.LetterboxdPassword)
+                using var service = await LetterboxdServiceFactory.CreateAuthenticatedAsync(
+                    account.LetterboxdUsername, account.LetterboxdPassword, account.RawCookies, _logger)
                     .ConfigureAwait(false);
 
-                var film = await scraper.LookupFilmByTmdbIdAsync(tmdbId).ConfigureAwait(false);
+                var film = await service.LookupFilmByTmdbIdAsync(tmdbId).ConfigureAwait(false);
                 var viewingDate = DateTime.Now.Date;
 
-                var diaryInfo = await scraper.GetDiaryInfoAsync(film.Slug, account.LetterboxdUsername).ConfigureAwait(false);
+                var diaryInfo = await service.GetDiaryInfoAsync(film.FilmId, account.LetterboxdUsername).ConfigureAwait(false);
 
                 if (Helpers.IsDuplicate(diaryInfo.LastDate, viewingDate))
                 {
@@ -117,7 +112,7 @@ public class PlaybackHandler : IHostedService, IDisposable
                 bool liked = account.SyncFavorites && (userData?.IsFavorite ?? false);
                 double? lbRating = Helpers.MapRating(userData?.Rating);
 
-                await diary.MarkAsWatchedAsync(film.Slug, film.FilmId, DateTime.Now, liked,
+                await service.MarkAsWatchedAsync(film.Slug, film.FilmId, DateTime.Now, liked,
                     film.ProductionId, isRewatch, lbRating).ConfigureAwait(false);
 
                 var action = isRewatch ? "Logged rewatch of" : "Logged";

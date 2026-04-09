@@ -158,11 +158,8 @@ public class LetterboxdController : ControllerBase
 
         try
         {
-            using var httpClient = new LetterboxdHttpClient(_logger);
-            var auth = new LetterboxdAuth(httpClient, _logger);
-
-            httpClient.SetRawCookies(request.RawCookies);
-            await auth.AuthenticateAsync(request.LetterboxdUsername, request.LetterboxdPassword)
+            using var service = await LetterboxdServiceFactory.CreateAuthenticatedAsync(
+                request.LetterboxdUsername, request.LetterboxdPassword, request.RawCookies, _logger)
                 .ConfigureAwait(false);
 
             return Ok(new { success = true, letterboxdUsername = request.LetterboxdUsername });
@@ -195,18 +192,13 @@ public class LetterboxdController : ControllerBase
         if (account == null)
             return BadRequest(new { error = "No Letterboxd account configured for this user" });
 
-        using var httpClient = new LetterboxdHttpClient(_logger);
-        var auth = new LetterboxdAuth(httpClient, _logger);
-        var scraper = new LetterboxdScraper(httpClient, _logger);
-        var diary = new LetterboxdDiary(httpClient, auth, scraper, _logger);
-
         try
         {
-            httpClient.SetRawCookies(account.RawCookies);
-            await auth.AuthenticateAsync(account.LetterboxdUsername, account.LetterboxdPassword)
+            using var service = await LetterboxdServiceFactory.CreateAuthenticatedAsync(
+                account.LetterboxdUsername, account.LetterboxdPassword, account.RawCookies, _logger)
                 .ConfigureAwait(false);
 
-            await diary.PostReviewAsync(request.FilmSlug, request.ReviewText, request.ContainsSpoilers, request.IsRewatch, request.Date, request.Rating)
+            await service.PostReviewAsync(request.FilmSlug, request.ReviewText, request.ContainsSpoilers, request.IsRewatch, request.Date, request.Rating)
                 .ConfigureAwait(false);
 
             _logger.LogInformation("Posted review for {FilmSlug} by {Username}",
