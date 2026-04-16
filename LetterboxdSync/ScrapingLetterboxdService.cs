@@ -37,7 +37,7 @@ public class ScrapingLetterboxdService : ILetterboxdService
         => _diary.MarkAsWatchedAsync(filmSlug, filmId, date, liked, productionId, rewatch, rating);
 
     public Task PostReviewAsync(string filmSlug, string? reviewText, bool containsSpoilers = false,
-        bool isRewatch = false, string? date = null, double? rating = null)
+        bool isRewatch = false, string? date = null, double? rating = null, int? tmdbId = null)
         => _diary.PostReviewAsync(filmSlug, reviewText, containsSpoilers, isRewatch, date, rating);
 
     public Task<List<int>> GetWatchlistTmdbIdsAsync(string username)

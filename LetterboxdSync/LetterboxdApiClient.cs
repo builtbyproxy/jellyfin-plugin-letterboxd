@@ -29,7 +29,7 @@ public class LetterboxdApiClient : ILetterboxdService
         _logger = logger;
         _http = handler != null ? new HttpClient(handler) : new HttpClient();
         _http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        _http.DefaultRequestHeaders.UserAgent.ParseAdd("LetterboxdSync/1.5");
+        _http.DefaultRequestHeaders.UserAgent.ParseAdd("LetterboxdSync/1.6");
     }
 
     public async Task AuthenticateAsync(string username, string password, string? rawCookies = null)
@@ -171,32 +171,17 @@ public class LetterboxdApiClient : ILetterboxdService
     }
 
     public async Task PostReviewAsync(string filmSlug, string? reviewText, bool containsSpoilers = false,
-        bool isRewatch = false, string? date = null, double? rating = null)
+        bool isRewatch = false, string? date = null, double? rating = null, int? tmdbId = null)
     {
         EnsureAuthenticated();
 
-        // Need to look up the film LID from slug
-        var filmResponse = await SendSignedAsync(HttpMethod.Get, "/films",
-            queryParams: $"perPage=1").ConfigureAwait(false);
+        // The Letterboxd API /log-entries endpoint requires an LID, not a slug.
+        // Resolve the LID via TMDb ID (the only identifier SyncHistory stores that the API accepts).
+        if (!tmdbId.HasValue || tmdbId.Value <= 0)
+            throw new Exception($"Cannot post review for {filmSlug} via the official API without a TMDb ID.");
 
-        // For reviews, we use the filmSlug to resolve the LID
-        // The caller should have already done a lookup, so filmSlug might be a LID
-        // Try direct film endpoint first
-        var lookupResponse = await SendSignedAsync(HttpMethod.Get, $"/film/{Uri.EscapeDataString(filmSlug)}")
-            .ConfigureAwait(false);
-
-        string filmId;
-        if (lookupResponse.IsSuccessStatusCode)
-        {
-            var lookupJson = await lookupResponse.Content.ReadAsStringAsync().ConfigureAwait(false);
-            using var lookupDoc = JsonDocument.Parse(lookupJson);
-            filmId = lookupDoc.RootElement.GetProperty("id").GetString()!;
-        }
-        else
-        {
-            // filmSlug might already be a LID
-            filmId = filmSlug;
-        }
+        var film = await LookupFilmByTmdbIdAsync(tmdbId.Value).ConfigureAwait(false);
+        var filmId = film.FilmId;
 
         var bodyObj = new Dictionary<string, object>
         {

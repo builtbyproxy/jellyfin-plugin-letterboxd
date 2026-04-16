@@ -16,7 +16,7 @@ public interface ILetterboxdService : IDisposable
         string? productionId = null, bool rewatch = false, double? rating = null);
 
     Task PostReviewAsync(string filmSlug, string? reviewText, bool containsSpoilers = false,
-        bool isRewatch = false, string? date = null, double? rating = null);
+        bool isRewatch = false, string? date = null, double? rating = null, int? tmdbId = null);
 
     Task<List<int>> GetWatchlistTmdbIdsAsync(string username);
 

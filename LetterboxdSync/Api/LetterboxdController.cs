@@ -198,7 +198,7 @@ public class LetterboxdController : ControllerBase
                 account.LetterboxdUsername, account.LetterboxdPassword, account.RawCookies, _logger)
                 .ConfigureAwait(false);
 
-            await service.PostReviewAsync(request.FilmSlug, request.ReviewText, request.ContainsSpoilers, request.IsRewatch, request.Date, request.Rating)
+            await service.PostReviewAsync(request.FilmSlug, request.ReviewText, request.ContainsSpoilers, request.IsRewatch, request.Date, request.Rating, request.TmdbId)
                 .ConfigureAwait(false);
 
             _logger.LogInformation("Posted review for {FilmSlug} by {Username}",
@@ -247,4 +247,5 @@ public class ReviewRequest
     public bool IsRewatch { get; set; }
     public string? Date { get; set; }
     public double? Rating { get; set; }
+    public int? TmdbId { get; set; }
 }
