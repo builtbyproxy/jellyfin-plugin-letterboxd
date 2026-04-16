@@ -163,7 +163,7 @@
 
                                     var reviewBtn = '';
                                     if (e.FilmSlug && (e.Status === 0 || e.Status === 3)) {
-                                        reviewBtn = '<button type="button" onclick="LBStats.openReview(\'' + e.FilmSlug + '\', \'' + e.FilmTitle.replace(/'/g, "\\'") + '\')" style="background:#2c3440;color:#fff;border:1px solid #444;border-radius:4px;padding:0.2em 0.6em;cursor:pointer;font-size:0.85em;">Write</button>';
+                                        reviewBtn = '<button type="button" onclick="LBStats.openReview(\'' + e.FilmSlug + '\', \'' + e.FilmTitle.replace(/'/g, "\\'") + '\', ' + (e.TmdbId || 0) + ')" style="background:#2c3440;color:#fff;border:1px solid #444;border-radius:4px;padding:0.2em 0.6em;cursor:pointer;font-size:0.85em;">Write</button>';
                                     }
 
                                     var errorInfo = e.Status === 2 && e.Error ? ' title="' + e.Error.replace(/"/g, '&quot;') + '"' : '';
@@ -222,7 +222,7 @@
                                     var timeStr = ts.toLocaleDateString() + ' ' + ts.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
                                     var reviewBtn = '';
                                     if (e.FilmSlug && (e.Status === 0 || e.Status === 3)) {
-                                        reviewBtn = '<button type="button" onclick="LBStats.openReview(\'' + e.FilmSlug + '\', \'' + e.FilmTitle.replace(/'/g, "\\'") + '\')" style="background:#2c3440;color:#fff;border:1px solid #444;border-radius:4px;padding:0.2em 0.6em;cursor:pointer;font-size:0.85em;">Review</button>';
+                                        reviewBtn = '<button type="button" onclick="LBStats.openReview(\'' + e.FilmSlug + '\', \'' + e.FilmTitle.replace(/'/g, "\\'") + '\', ' + (e.TmdbId || 0) + ')" style="background:#2c3440;color:#fff;border:1px solid #444;border-radius:4px;padding:0.2em 0.6em;cursor:pointer;font-size:0.85em;">Review</button>';
                                     }
                                     var errorInfo = e.Status === 2 && e.Error ? ' title="' + e.Error.replace(/"/g, '&quot;') + '"' : '';
                                     tr.innerHTML = '<td style="padding:0.5em;">' + filmLink + '</td>'
@@ -291,8 +291,9 @@
                             });
                         },
 
-                        openReview: function (slug, title) {
+                        openReview: function (slug, title, tmdbId) {
                             this.currentSlug = slug;
+                            this.currentTmdbId = tmdbId || 0;
                             document.getElementById('reviewTitle').textContent = 'Review: ' + title;
                             document.getElementById('reviewText').value = '';
                             document.getElementById('reviewSpoilers').checked = false;
@@ -313,6 +314,7 @@
 
                             self.apiPost('Jellyfin.Plugin.LetterboxdSync/Review', {
                                 filmSlug: self.currentSlug,
+                                tmdbId: self.currentTmdbId || null,
                                 reviewText: text,
                                 containsSpoilers: document.getElementById('reviewSpoilers').checked
                             })

@@ -302,7 +302,7 @@
                                     var ts = new Date(e.Timestamp);
                                     var time = ts.toLocaleDateString() + ' ' + ts.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
                                     var canReview = (s === 'Success' || s === 'Rewatch' || s === 'Skipped');
-                                    var btn = (e.FilmSlug && canReview) ? '<button type="button" onclick="LB.openReview(\'' + e.FilmSlug + '\',\'' + e.FilmTitle.replace(/'/g, "\\'") + '\')" class="lb-btn lb-btn-review">Review</button>' : '';
+                                    var btn = (e.FilmSlug && canReview) ? '<button type="button" onclick="LB.openReview(\'' + e.FilmSlug + '\',\'' + e.FilmTitle.replace(/'/g, "\\'") + '\',' + (e.TmdbId || 0) + ')" class="lb-btn lb-btn-review">Review</button>' : '';
                                     var errText = '';
                                     if (s === 'Failed' && e.Error) {
                                         var shortErr = e.Error;
@@ -397,8 +397,9 @@
                             });
                         },
 
-                        openReview: function (slug, title) {
+                        openReview: function (slug, title, tmdbId) {
                             this.currentSlug = slug;
+                            this.currentTmdbId = tmdbId || 0;
                             document.getElementById('reviewTitle').textContent = 'Review: ' + title;
                             document.getElementById('reviewText').value = '';
                             document.getElementById('reviewSpoilers').checked = false;
@@ -431,6 +432,7 @@
                                 type: 'POST', contentType: 'application/json',
                                 data: JSON.stringify({
                                     filmSlug: self.currentSlug,
+                                    tmdbId: self.currentTmdbId || null,
                                     reviewText: text || null,
                                     containsSpoilers: document.getElementById('reviewSpoilers').checked,
                                     isRewatch: isRewatch,
