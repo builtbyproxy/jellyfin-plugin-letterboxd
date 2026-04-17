@@ -1,0 +1,243 @@
+---
+const bars = [3, 5, 2, 7, 4, 6, 8, 4, 9, 6, 5, 7, 10, 8];
+const max = Math.max(...bars);
+
+const activity = [
+  { title: 'Oppenheimer',              year: '2023', status: 'synced',  time: '2m ago' },
+  { title: 'Top Gun: Maverick',        year: '2022', status: 'synced',  time: '11m ago' },
+  { title: 'Spider-Man: No Way Home',  year: '2021', status: 'rewatch', time: '1h ago' },
+  { title: 'Forrest Gump',             year: '1994', status: 'synced',  time: '3h ago' },
+];
+---
+
+<div class="dash" aria-hidden="true">
+  <div class="dash-head">
+    <div>
+      <div class="dash-title">LetterboxdSync</div>
+      <div class="dash-sub">Dashboard · @8bitproxy</div>
+    </div>
+    <div class="dash-actions">
+      <span class="dash-pill dash-pill-ok"><span class="pill-dot"></span> Healthy</span>
+      <span class="dash-btn">Run sync now</span>
+    </div>
+  </div>
+
+  <div class="dash-stats">
+    <div class="stat-cell">
+      <div class="stat-num">1,284</div>
+      <div class="stat-label">Synced</div>
+    </div>
+    <div class="stat-cell">
+      <div class="stat-num stat-num-blue">27</div>
+      <div class="stat-label">Rewatches</div>
+    </div>
+    <div class="stat-cell">
+      <div class="stat-num stat-num-orange">3</div>
+      <div class="stat-label">Skipped</div>
+    </div>
+    <div class="stat-cell">
+      <div class="stat-num stat-num-dim">0</div>
+      <div class="stat-label">Failed</div>
+    </div>
+  </div>
+
+  <div class="dash-row">
+    <div class="dash-card dash-chart">
+      <div class="dash-card-head">
+        <span>Syncs · last 14 days</span>
+        <span class="dash-card-meta">+18%</span>
+      </div>
+      <div class="chart">
+        {bars.map((b) => (
+          <span class="chart-bar" style={`--h:${(b/max)*100}%`}></span>
+        ))}
+      </div>
+    </div>
+
+    <div class="dash-card dash-activity">
+      <div class="dash-card-head">
+        <span>Recent activity</span>
+        <span class="dash-card-meta">Live</span>
+      </div>
+      <ul class="activity">
+        {activity.map((a) => (
+          <li>
+            <span class={`act-status act-${a.status}`}>{a.status === 'rewatch' ? '↻' : '✓'}</span>
+            <span class="act-title">{a.title}</span>
+            <span class="act-year">{a.year}</span>
+            <span class="act-time">{a.time}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  </div>
+</div>
+
+<style>
+  .dash {
+    background: linear-gradient(180deg, var(--bg-elev), var(--bg-elev-2));
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .dash-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .dash-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .dash-sub {
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .dash-actions { display: inline-flex; gap: 8px; align-items: center; }
+  .dash-pill {
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(0,224,84,0.1);
+    color: var(--lb-green);
+    border: 1px solid rgba(0,224,84,0.25);
+  }
+  .pill-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--lb-green);
+    box-shadow: 0 0 0 0 rgba(0,224,84,0.6);
+    animation: pulse 1.8s ease-out infinite;
+  }
+  .dash-btn {
+    font-size: 11px;
+    padding: 5px 11px;
+    border-radius: 8px;
+    background: var(--lb-green);
+    color: #04140a;
+    font-weight: 600;
+  }
+
+  .dash-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+  }
+  .stat-cell {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+  }
+  .stat-num {
+    font-size: 24px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--lb-green);
+    margin-bottom: 4px;
+  }
+  .stat-num-blue { color: var(--lb-blue); }
+  .stat-num-orange { color: var(--lb-orange); }
+  .stat-num-dim { color: var(--text-dim); }
+  .stat-label {
+    font-size: 10px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+
+  .dash-row {
+    display: grid;
+    grid-template-columns: 1fr 1.3fr;
+    gap: 10px;
+  }
+  @media (max-width: 720px) {
+    .dash-row { grid-template-columns: 1fr; }
+    .dash-stats { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  .dash-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .dash-card-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+  .dash-card-meta {
+    font-family: var(--font-mono);
+    color: var(--lb-green);
+    font-size: 10px;
+  }
+
+  .chart {
+    display: flex;
+    align-items: flex-end;
+    gap: 5px;
+    height: 96px;
+  }
+  .chart-bar {
+    flex: 1;
+    height: var(--h);
+    background: linear-gradient(180deg, var(--lb-green), rgba(0,224,84,0.2));
+    border-radius: 3px 3px 0 0;
+    min-height: 3px;
+  }
+  .chart-bar:nth-child(3n) {
+    background: linear-gradient(180deg, var(--lb-blue), rgba(64,188,244,0.2));
+  }
+  .chart-bar:nth-child(4n) {
+    background: linear-gradient(180deg, var(--lb-orange), rgba(255,128,0,0.2));
+  }
+
+  .activity {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .activity li {
+    display: grid;
+    grid-template-columns: 18px 1fr auto auto;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    padding: 4px 0;
+    border-bottom: 1px dashed var(--border);
+  }
+  .activity li:last-child { border-bottom: 0; }
+  .act-status {
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 10px;
+    font-weight: 700;
+  }
+  .act-synced { background: rgba(0,224,84,0.15); color: var(--lb-green); }
+  .act-rewatch { background: rgba(64,188,244,0.15); color: var(--lb-blue); }
+  .act-title { color: var(--text); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .act-year { color: var(--text-dim); font-family: var(--font-mono); font-size: 11px; }
+  .act-time { color: var(--text-dim); font-size: 11px; }
+</style>

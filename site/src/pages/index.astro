@@ -1,0 +1,844 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Icon from '../components/Icon.astro';
+import SyncFlow from '../components/SyncFlow.astro';
+import TransferBento from '../components/TransferBento.astro';
+import DashboardPeek from '../components/DashboardPeek.astro';
+
+const repoUrl = 'https://github.com/builtbyproxy/jellyfin-plugin-letterboxd';
+const manifestUrl = 'https://raw.githubusercontent.com/builtbyproxy/jellyfin-plugin-letterboxd/main/manifest.json';
+const releasesUrl = `${repoUrl}/releases`;
+const latestReleaseUrl = `${repoUrl}/releases/latest`;
+
+type Feature = { title: string; body: string; icon: string };
+type FeatureGroup = { id: string; label: string; heading: string; intro: string; visual: 'flow' | 'rating' | 'dashboard'; items: Feature[] };
+
+const featureGroups: FeatureGroup[] = [
+  {
+    id: 'sync',
+    label: 'Syncing',
+    heading: 'Watch it. Log it.',
+    intro: 'Real-time on playback, with a daily sweep for anything missed.',
+    visual: 'flow',
+    items: [
+      { title: 'Real-time', body: 'Diary entry within seconds of credits rolling.', icon: 'bolt' },
+      { title: 'Daily catch-up', body: 'Scheduled sweep picks up offline or skipped watches.', icon: 'clock' },
+      { title: 'TMDb matching', body: 'Matched by ID, so foreign and messy titles just work.', icon: 'target' },
+    ],
+  },
+  {
+    id: 'transfer',
+    label: 'What transfers',
+    heading: 'Stars, likes, reviews, watchlist.',
+    intro: 'All the context around a watch moves between both platforms.',
+    visual: 'rating',
+    items: [
+      { title: 'Ratings as stars', body: 'Jellyfin 0-10 maps onto Letterboxd 0.5-5.', icon: 'star' },
+      { title: 'Favorites as likes', body: 'Hearted on Letterboxd when favorited in Jellyfin.', icon: 'heart' },
+      { title: 'Watchlist + reviews', body: 'Watchlist becomes a playlist; reviews post from the dashboard.', icon: 'list' },
+    ],
+  },
+  {
+    id: 'under-the-hood',
+    label: 'Under the hood',
+    heading: 'Built for a home server.',
+    intro: 'Multi-user, resilient, and transparent about what it did.',
+    visual: 'dashboard',
+    items: [
+      { title: 'Multi-user', body: 'Each Jellyfin user links their own Letterboxd account.', icon: 'users' },
+      { title: 'Cloudflare resilient', body: 'Official API first, scraping fallback, automatic retry.', icon: 'cloud' },
+      { title: 'Self-healing auth', body: 'Stale cookies trigger an automatic re-login and retry.', icon: 'refresh' },
+    ],
+  },
+];
+---
+
+<Layout title="LetterboxdSync for Jellyfin" description="Automatically sync your Jellyfin watch history to your Letterboxd diary.">
+  <header class="site-header">
+    <div class="container nav">
+      <a class="brand" href="/jellyfin-plugin-letterboxd/" aria-label="LetterboxdSync home">
+        <span class="dots" aria-hidden="true">
+          <span class="dot dot-green"></span>
+          <span class="dot dot-blue"></span>
+          <span class="dot dot-orange"></span>
+        </span>
+        <span class="brand-name">LetterboxdSync</span>
+      </a>
+      <nav class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#install">Install</a>
+        <a href="#setup">Setup</a>
+        <a href={repoUrl} rel="noopener">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <section class="hero">
+    <div class="container hero-grid">
+      <div class="hero-copy">
+        <div class="eyebrow">
+          <span class="eyebrow-dot"></span>
+          Jellyfin plugin
+        </div>
+        <h1>
+          Your Jellyfin diary,<br />
+          on <span class="accent">Letterboxd</span>.
+        </h1>
+        <p class="lede">
+          LetterboxdSync logs every film you watch in Jellyfin straight to your Letterboxd diary.
+          Real-time, multi-user, and quietly resilient to the rough edges of scraping Letterboxd.
+        </p>
+        <div class="hero-cta">
+          <a class="btn btn-primary" href="#install">Install plugin</a>
+          <a class="btn btn-secondary" href={repoUrl} rel="noopener">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+            View on GitHub
+          </a>
+        </div>
+        <div class="install-pill" data-pill>
+          <span class="install-pill-label">Manifest URL</span>
+          <code class="install-pill-url">{manifestUrl}</code>
+          <button class="install-pill-btn" type="button" data-copy={manifestUrl} aria-label="Copy manifest URL">
+            <span class="copy-icon" aria-hidden="true">⧉</span>
+            <span class="copy-text">Copy</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="hero-art" aria-hidden="true">
+        <div class="card-stack">
+          <div class="card card-1">
+            <div class="card-head">
+              <span class="mini-dots"><i></i><i></i><i></i></span>
+              <span class="card-title">Recent sync</span>
+            </div>
+            <ul class="diary">
+              <li><span class="diary-title">Inception</span><span class="diary-stars">★★★★★</span></li>
+              <li><span class="diary-title">The Dark Knight</span><span class="diary-stars">★★★★½</span></li>
+              <li><span class="diary-title">Avatar</span><span class="diary-stars">★★★★</span></li>
+              <li><span class="diary-title">Jurassic Park</span><span class="diary-stars">★★★★</span></li>
+            </ul>
+            <div class="card-foot">
+              <span class="pulse"></span>
+              Synced just now
+            </div>
+          </div>
+          <div class="card card-2">
+            <div class="stat">
+              <div class="stat-num">1,284</div>
+              <div class="stat-label">films synced</div>
+            </div>
+            <div class="stat">
+              <div class="stat-num">27</div>
+              <div class="stat-label">rewatches</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="features">
+    <div class="container">
+      <div class="section-head">
+        <h2>Everything you'd expect. And a few you wouldn't.</h2>
+        <p>Built as a replacement for an older plugin that broke when Letterboxd deprecated its legacy endpoint. This one targets the current JSON API, falls back to scraping when it has to, and hides the scraping stitches from you.</p>
+      </div>
+
+      {featureGroups.map((group, i) => (
+        <div class={`feature-group ${i === 0 ? 'feature-group-first' : ''}`} id={`features-${group.id}`}>
+          <div class="group-head">
+            <h3 class="group-heading">{group.heading}</h3>
+            <p class="group-intro">{group.intro}</p>
+          </div>
+
+          <div class="group-body">
+            <div class="group-visual">
+              {group.visual === 'flow' && <SyncFlow />}
+              {group.visual === 'rating' && <TransferBento />}
+              {group.visual === 'dashboard' && <DashboardPeek />}
+            </div>
+
+            <ul class="feature-list">
+              {group.items.map((f) => (
+                <li class="feature">
+                  <span class="feature-icon" aria-hidden="true">
+                    <Icon name={f.icon} />
+                  </span>
+                  <div class="feature-text">
+                    <h4>{f.title}</h4>
+                    <p>{f.body}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <section id="install">
+    <div class="container">
+      <div class="section-head">
+        <h2>Install</h2>
+        <p>Two paths. Use the plugin repository for automatic updates, or install manually from a release.</p>
+      </div>
+
+      <div class="install-grid">
+        <div class="install-card install-card-featured">
+          <div class="install-badge">Recommended</div>
+          <h3>Plugin repository</h3>
+          <ol class="steps">
+            <li>Open <strong>Dashboard &rarr; Plugins &rarr; Repositories</strong> in Jellyfin.</li>
+            <li>Add a new repository with name <code>LetterboxdSync</code> and URL:
+              <div class="install-pill install-pill-inline" data-pill>
+                <code class="install-pill-url">{manifestUrl}</code>
+                <button class="install-pill-btn" type="button" data-copy={manifestUrl} aria-label="Copy manifest URL">
+                  <span class="copy-icon" aria-hidden="true">⧉</span>
+                  <span class="copy-text">Copy</span>
+                </button>
+              </div>
+            </li>
+            <li>Open the <strong>Catalog</strong>, find <strong>LetterboxdSync</strong>, and click <strong>Install</strong>.</li>
+            <li>Restart Jellyfin.</li>
+          </ol>
+        </div>
+
+        <div class="install-card">
+          <h3>Manual install</h3>
+          <ol class="steps">
+            <li>Download the latest ZIP from <a href={latestReleaseUrl} rel="noopener">Releases</a>.</li>
+            <li>Extract <code>LetterboxdSync.dll</code> and <code>HtmlAgilityPack.dll</code> into your Jellyfin plugins directory.</li>
+            <li>Restart Jellyfin.</li>
+          </ol>
+          <a class="text-link" href={releasesUrl} rel="noopener">Browse all releases &rarr;</a>
+        </div>
+      </div>
+
+      <div class="reqs">
+        <div class="req"><span class="req-label">Jellyfin</span><span class="req-value">10.11 or newer</span></div>
+        <div class="req"><span class="req-label">Requires</span><span class="req-value">A Letterboxd account</span></div>
+        <div class="req"><span class="req-label">License</span><span class="req-value">MIT</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="setup">
+    <div class="container">
+      <div class="section-head">
+        <h2>Setup in under a minute</h2>
+        <p>Once the plugin is installed, each user links their own Letterboxd account from the Jellyfin dashboard.</p>
+      </div>
+
+      <ol class="setup-steps">
+        <li>
+          <div class="step-num">1</div>
+          <div class="step-body">
+            <h3>Open the plugin page</h3>
+            <p>Go to <strong>Dashboard &rarr; Plugins &rarr; Letterboxd Sync</strong>, then switch to the <strong>Settings</strong> tab.</p>
+          </div>
+        </li>
+        <li>
+          <div class="step-num">2</div>
+          <div class="step-body">
+            <h3>Add an account</h3>
+            <p>Click <strong>+ Add Account</strong>, pick a Jellyfin user, and enter their Letterboxd credentials. Check <strong>Enabled</strong>.</p>
+          </div>
+        </li>
+        <li>
+          <div class="step-num">3</div>
+          <div class="step-body">
+            <h3>Watch a movie</h3>
+            <p>That's it. Finish a film in Jellyfin and check your Letterboxd diary. A daily scheduled sync catches anything missed.</p>
+          </div>
+        </li>
+      </ol>
+
+      <div class="tip">
+        <strong>Seeing Cloudflare 403s?</strong>
+        <p>Log into Letterboxd in your browser, grab the <code>Cookie</code> header from DevTools, and paste it into the plugin's <strong>Raw Cookies</strong> field. The plugin will use the official API first and only fall back to scraping when needed.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <div class="footer-brand">
+        <span class="dots dots-sm" aria-hidden="true">
+          <span class="dot dot-green"></span>
+          <span class="dot dot-blue"></span>
+          <span class="dot dot-orange"></span>
+        </span>
+        <span>LetterboxdSync</span>
+      </div>
+      <div class="footer-links">
+        <a href={repoUrl} rel="noopener">GitHub</a>
+        <a href={releasesUrl} rel="noopener">Releases</a>
+        <a href={`${repoUrl}/issues`} rel="noopener">Issues</a>
+        <a href="https://letterboxd.com/" rel="noopener">Letterboxd</a>
+        <a href="https://jellyfin.org/" rel="noopener">Jellyfin</a>
+      </div>
+      <div class="footer-meta">
+        <span>Unofficial. Not affiliated with Letterboxd or Jellyfin.</span>
+      </div>
+    </div>
+  </footer>
+</Layout>
+
+<style>
+  .site-header {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: rgba(11,13,16,0.75);
+    backdrop-filter: saturate(140%) blur(10px);
+    -webkit-backdrop-filter: saturate(140%) blur(10px);
+    border-bottom: 1px solid var(--border);
+  }
+  .nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 64px;
+  }
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--text);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  .brand:hover { text-decoration: none; }
+  .brand-name { font-size: 15px; }
+
+  .dots {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .dots .dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .dots-sm .dot { width: 10px; height: 10px; }
+  .dot-green { background: var(--lb-green); }
+  .dot-blue { background: var(--lb-blue); }
+  .dot-orange { background: var(--lb-orange); }
+
+  .nav-links {
+    display: flex;
+    gap: 22px;
+    font-size: 14px;
+  }
+  .nav-links a {
+    color: var(--text-dim);
+  }
+  .nav-links a:hover { color: var(--text); text-decoration: none; }
+
+  @media (max-width: 640px) {
+    .nav-links a:nth-child(-n+2) { display: none; }
+  }
+
+  .hero { padding: 128px 0 112px; }
+  .hero-grid {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: 72px;
+    align-items: center;
+  }
+  @media (max-width: 900px) {
+    .hero-grid { grid-template-columns: 1fr; gap: 48px; }
+    .hero { padding: 80px 0 72px; }
+  }
+
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    padding: 6px 12px;
+    border-radius: 999px;
+    margin-bottom: 20px;
+  }
+  .eyebrow-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--jf-purple);
+    box-shadow: 0 0 12px var(--jf-purple);
+  }
+
+  .accent {
+    background: linear-gradient(90deg, var(--lb-green), var(--lb-blue) 55%, var(--lb-orange));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .lede {
+    font-size: 1.125rem;
+    max-width: 560px;
+    color: var(--text-dim);
+  }
+
+  .hero-cta {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 28px;
+  }
+
+  .install-pill {
+    margin-top: 20px;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    padding: 8px 8px 8px 14px;
+    border-radius: 999px;
+    max-width: 100%;
+  }
+  .install-pill-inline { margin-top: 10px; }
+  .install-pill-label {
+    font-size: 12px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding-right: 6px;
+    border-right: 1px solid var(--border);
+  }
+  .install-pill-url {
+    background: transparent;
+    border: 0;
+    padding: 0;
+    color: var(--text);
+    font-size: 13px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: min(60vw, 440px);
+  }
+  .install-pill-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--bg-elev-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 12px;
+    border-radius: 999px;
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 120ms ease, color 120ms ease;
+  }
+  .install-pill-btn:hover { background: var(--border); }
+  .install-pill-btn.copied {
+    background: var(--lb-green);
+    color: #04140a;
+    border-color: transparent;
+  }
+  .copy-icon { font-size: 14px; line-height: 1; }
+
+  .hero-art {
+    position: relative;
+  }
+  .card-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    width: 100%;
+  }
+  .card {
+    background: linear-gradient(180deg, var(--bg-elev), var(--bg-elev-2));
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+    box-shadow: var(--shadow);
+  }
+  .card-1 { transform: rotate(-1deg); transform-origin: left center; }
+  .card-2 {
+    transform: rotate(1deg);
+    transform-origin: right center;
+    align-self: flex-end;
+    width: 78%;
+    display: flex;
+    gap: 28px;
+    justify-content: space-around;
+  }
+  @media (max-width: 900px) {
+    .card-1, .card-2 { transform: none; width: 100%; }
+  }
+
+  .card-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 14px;
+  }
+  .card-title {
+    color: var(--text-dim);
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+  .mini-dots {
+    display: inline-flex;
+    gap: 4px;
+  }
+  .mini-dots i {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--border);
+  }
+  .mini-dots i:nth-child(1) { background: var(--lb-green); }
+  .mini-dots i:nth-child(2) { background: var(--lb-blue); }
+  .mini-dots i:nth-child(3) { background: var(--lb-orange); }
+
+  .diary {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .diary li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px dashed var(--border);
+    font-size: 14px;
+  }
+  .diary li:last-child { border-bottom: 0; }
+  .diary-title { color: var(--text); }
+  .diary-stars { color: var(--lb-green); font-family: var(--font-mono); letter-spacing: 1px; }
+
+  .card-foot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  .pulse {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--lb-green);
+    box-shadow: 0 0 0 0 rgba(0,224,84,0.6);
+    animation: pulse 1.8s ease-out infinite;
+  }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(0,224,84,0.55); }
+    70% { box-shadow: 0 0 0 10px rgba(0,224,84,0); }
+    100% { box-shadow: 0 0 0 0 rgba(0,224,84,0); }
+  }
+
+  .stat {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .stat-num {
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    background: linear-gradient(90deg, var(--lb-green), var(--lb-blue));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .stat-label { color: var(--text-dim); font-size: 13px; text-transform: uppercase; letter-spacing: 0.1em; }
+
+  .section-head {
+    max-width: 720px;
+    margin-bottom: 56px;
+  }
+  .section-head p { font-size: 1.05rem; }
+
+  .feature-group + .feature-group {
+    margin-top: 96px;
+    padding-top: 96px;
+    border-top: 1px dashed var(--border);
+  }
+
+  .group-head {
+    display: flex;
+    align-items: baseline;
+    gap: 24px;
+    flex-wrap: wrap;
+    margin-bottom: 40px;
+  }
+
+  .group-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    color: var(--text-dim);
+    flex-shrink: 0;
+  }
+  .group-label-num {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--lb-green);
+    background: rgba(0,224,84,0.1);
+    border: 1px solid rgba(0,224,84,0.25);
+    padding: 3px 8px;
+    border-radius: 999px;
+    letter-spacing: 0.1em;
+  }
+  .group-heading {
+    font-size: clamp(1.5rem, 2.6vw, 2rem);
+    font-weight: 700;
+    color: var(--text);
+    margin: 0 0 8px;
+    letter-spacing: -0.02em;
+  }
+  .group-intro {
+    margin: 0;
+    color: var(--text-dim);
+    font-size: 1.0625rem;
+    max-width: 620px;
+  }
+
+  .group-body {
+    display: flex;
+    flex-direction: column;
+    gap: 36px;
+  }
+
+  .group-visual {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .feature-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+  @media (max-width: 800px) { .feature-list { grid-template-columns: 1fr; } }
+
+  .feature {
+    position: relative;
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 22px;
+    transition: border-color 160ms ease, transform 160ms ease;
+  }
+  .feature:hover { border-color: rgba(0,224,84,0.35); transform: translateY(-2px); }
+  .feature h4 {
+    color: var(--text);
+    margin: 0 0 4px;
+    font-size: 0.975rem;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+  }
+  .feature p { margin: 0; font-size: 0.9rem; line-height: 1.55; color: var(--text-dim); }
+
+  .feature-text { min-width: 0; }
+
+  .feature-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
+    background: var(--bg-elev-2);
+    border: 1px solid var(--border);
+    color: var(--lb-green);
+    flex-shrink: 0;
+  }
+  .feature-group:nth-of-type(3n+2) .feature-icon { color: var(--lb-blue); }
+  .feature-group:nth-of-type(3n+2) .feature:hover { border-color: rgba(64,188,244,0.35); }
+  .feature-group:nth-of-type(3n+3) .feature-icon { color: var(--lb-orange); }
+  .feature-group:nth-of-type(3n+3) .feature:hover { border-color: rgba(255,128,0,0.35); }
+  .feature-group:nth-of-type(3n+3) .group-label-num {
+    color: var(--lb-orange);
+    background: rgba(255,128,0,0.1);
+    border-color: rgba(255,128,0,0.25);
+  }
+  .feature-group:nth-of-type(3n+2) .group-label-num {
+    color: var(--lb-blue);
+    background: rgba(64,188,244,0.1);
+    border-color: rgba(64,188,244,0.25);
+  }
+
+  .install-grid {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr;
+    gap: 28px;
+  }
+  @media (max-width: 800px) { .install-grid { grid-template-columns: 1fr; } }
+
+  .install-card {
+    position: relative;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 32px;
+  }
+  .install-card-featured {
+    border-color: rgba(0,224,84,0.35);
+    background:
+      radial-gradient(600px 200px at 0% 0%, rgba(0,224,84,0.08), transparent 60%),
+      var(--bg-elev);
+  }
+  .install-badge {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    background: var(--lb-green);
+    color: #04140a;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 999px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .steps {
+    margin: 16px 0 0;
+    padding-left: 1.1em;
+    color: var(--text-dim);
+  }
+  .steps li { margin-bottom: 10px; }
+  .steps li::marker { color: var(--text); font-weight: 600; }
+
+  .text-link {
+    display: inline-block;
+    margin-top: 14px;
+    color: var(--lb-blue);
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  .reqs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 28px;
+  }
+  .req {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 10px 14px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .req-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.1em; }
+  .req-value { font-size: 14px; color: var(--text); font-weight: 500; }
+
+  .setup-steps {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+  }
+  @media (max-width: 800px) { .setup-steps { grid-template-columns: 1fr; } }
+  .setup-steps li {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 26px;
+    display: flex;
+    gap: 18px;
+  }
+  .step-num {
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--lb-green), var(--lb-blue));
+    color: #04140a;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+  }
+  .step-body h3 { margin-bottom: 4px; }
+  .step-body p { margin: 0; font-size: 0.95rem; }
+
+  .tip {
+    margin-top: 32px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--lb-orange);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+  }
+  .tip strong { color: var(--text); }
+  .tip p { margin: 6px 0 0; }
+
+  .site-footer {
+    border-top: 1px solid var(--border);
+    padding: 36px 0;
+    color: var(--text-dim);
+  }
+  .footer-inner {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 14px;
+  }
+  .footer-brand { display: inline-flex; align-items: center; gap: 10px; color: var(--text); font-weight: 600; }
+  .footer-links { display: inline-flex; gap: 18px; flex-wrap: wrap; }
+  .footer-links a { color: var(--text-dim); }
+  .footer-links a:hover { color: var(--text); text-decoration: none; }
+  .footer-meta { color: var(--text-dim); font-size: 13px; }
+</style>
+
+<script>
+  document.querySelectorAll<HTMLButtonElement>('[data-copy]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const text = btn.getAttribute('data-copy') ?? '';
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      }
+      btn.classList.add('copied');
+      const label = btn.querySelector('.copy-text');
+      const original = label?.textContent ?? 'Copy';
+      if (label) label.textContent = 'Copied';
+      setTimeout(() => {
+        btn.classList.remove('copied');
+        if (label) label.textContent = original;
+      }, 1600);
+    });
+  });
+</script>

@@ -1,0 +1,130 @@
+---
+interface Props {
+  title: string;
+  description?: string;
+}
+
+const { title, description = "Automatically sync your Jellyfin watch history to your Letterboxd diary." } = Astro.props;
+const canonical = new URL(Astro.url.pathname, Astro.site).toString();
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="description" content={description} />
+    <link rel="icon" type="image/svg+xml" href={`${import.meta.env.BASE_URL}/favicon.svg`.replace(/\/+/g, '/')} />
+    <link rel="canonical" href={canonical} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonical} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <title>{title}</title>
+  </head>
+  <body>
+    <slot />
+    <style is:global>
+      :root {
+        --bg: #0b0d10;
+        --bg-elev: #14171c;
+        --bg-elev-2: #1b2028;
+        --border: #262c35;
+        --text: #e7ebf0;
+        --text-dim: #9aa4b2;
+        --lb-green: #00e054;
+        --lb-blue: #40bcf4;
+        --lb-orange: #ff8000;
+        --jf-purple: #aa5cc3;
+        --jf-blue: #00a4dc;
+        --radius: 12px;
+        --radius-lg: 16px;
+        --shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 20px 40px -20px rgba(0,0,0,0.6);
+        --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Inter, "Helvetica Neue", Arial, sans-serif;
+        --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      }
+
+      *, *::before, *::after { box-sizing: border-box; }
+
+      html { scroll-behavior: smooth; }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--font-sans);
+        font-size: 16px;
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        background-image:
+          radial-gradient(1200px 600px at 80% -200px, rgba(170,92,195,0.12), transparent 60%),
+          radial-gradient(1000px 500px at -100px 10%, rgba(0,224,84,0.08), transparent 60%),
+          radial-gradient(900px 500px at 50% 120%, rgba(64,188,244,0.08), transparent 60%);
+      }
+
+      a { color: var(--lb-green); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+
+      h1, h2, h3 { line-height: 1.2; letter-spacing: -0.02em; margin: 0 0 0.5em; }
+      h1 { font-size: clamp(2.25rem, 5vw, 3.75rem); font-weight: 800; }
+      h2 { font-size: clamp(1.5rem, 3vw, 2.125rem); font-weight: 700; }
+      h3 { font-size: 1.125rem; font-weight: 600; }
+
+      p { margin: 0 0 1em; color: var(--text-dim); }
+
+      code {
+        font-family: var(--font-mono);
+        font-size: 0.9em;
+        background: var(--bg-elev);
+        padding: 0.15em 0.4em;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+      }
+
+      .container {
+        width: 100%;
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 0 48px;
+      }
+      @media (max-width: 640px) {
+        .container { padding: 0 20px; }
+      }
+
+      section { padding: 112px 0; }
+      section + section { border-top: 1px solid var(--border); }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 20px;
+        border-radius: 10px;
+        font-weight: 600;
+        font-size: 15px;
+        border: 1px solid transparent;
+        cursor: pointer;
+        transition: transform 80ms ease, background 120ms ease, border-color 120ms ease;
+        text-decoration: none;
+      }
+      .btn:hover { text-decoration: none; transform: translateY(-1px); }
+      .btn-primary {
+        background: var(--lb-green);
+        color: #04140a;
+      }
+      .btn-primary:hover { background: #2bed72; }
+      .btn-secondary {
+        background: var(--bg-elev);
+        color: var(--text);
+        border-color: var(--border);
+      }
+      .btn-secondary:hover { background: var(--bg-elev-2); }
+
+      @media (max-width: 640px) {
+        section { padding: 72px 0; }
+      }
+    </style>
+  </body>
+</html>
