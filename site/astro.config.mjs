@@ -1,7 +1,7 @@
 import { defineConfig } from 'astro/config';
 
 export default defineConfig({
-  site: 'https://builtbyproxy.github.io',
+  site: 'https://lachlanyoung.dev',
   base: '/jellyfin-plugin-letterboxd',
   trailingSlash: 'ignore',
   build: {

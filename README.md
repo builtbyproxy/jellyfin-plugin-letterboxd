@@ -6,7 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Downloads](https://img.shields.io/github/downloads/builtbyproxy/jellyfin-plugin-letterboxd/total)](https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/releases)
 
-**Website:** [builtbyproxy.github.io/jellyfin-plugin-letterboxd](https://builtbyproxy.github.io/jellyfin-plugin-letterboxd/)
+**Website:** [lachlanyoung.dev/jellyfin-plugin-letterboxd](https://lachlanyoung.dev/jellyfin-plugin-letterboxd/)
 
 Automatically sync your Jellyfin watch history to your Letterboxd diary. Films are logged in real-time when you finish watching, with a daily scheduled sync as a safety net.
 
