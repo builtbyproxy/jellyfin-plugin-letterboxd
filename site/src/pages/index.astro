@@ -343,16 +343,17 @@ const featureGroups: FeatureGroup[] = [
     .nav-links a:nth-child(-n+2) { display: none; }
   }
 
-  .hero { padding: 128px 0 112px; }
+  .hero { padding: 80px 0 72px; }
   .hero-grid {
     display: grid;
     grid-template-columns: 1.1fr 0.9fr;
-    gap: 72px;
+    gap: 64px;
     align-items: center;
   }
+  .hero-copy, .hero-art { min-width: 0; }
   @media (max-width: 900px) {
-    .hero-grid { grid-template-columns: 1fr; gap: 48px; }
-    .hero { padding: 80px 0 72px; }
+    .hero-grid { grid-template-columns: 1fr; gap: 40px; }
+    .hero { padding: 56px 0 48px; }
   }
 
   .eyebrow {
@@ -406,7 +407,7 @@ const featureGroups: FeatureGroup[] = [
     border-radius: 999px;
     max-width: 100%;
   }
-  .install-pill-inline { margin-top: 10px; }
+  .install-pill-inline { margin-top: 10px; display: flex; }
   .install-pill-label {
     font-size: 12px;
     color: var(--text-dim);
@@ -414,6 +415,7 @@ const featureGroups: FeatureGroup[] = [
     letter-spacing: 0.08em;
     padding-right: 6px;
     border-right: 1px solid var(--border);
+    white-space: nowrap;
   }
   .install-pill-url {
     background: transparent;
@@ -424,7 +426,15 @@ const featureGroups: FeatureGroup[] = [
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    flex: 1;
+    min-width: 0;
     max-width: min(60vw, 440px);
+  }
+  @media (max-width: 640px) {
+    .install-pill { padding: 6px 6px 6px 12px; gap: 8px; }
+    .install-pill-label { display: none; }
+    .install-pill-url { max-width: min(50vw, 240px); font-size: 12px; }
+    .install-pill-btn { padding: 5px 10px; font-size: 12px; }
   }
   .install-pill-btn {
     display: inline-flex;
@@ -464,10 +474,7 @@ const featureGroups: FeatureGroup[] = [
     padding: 20px;
     box-shadow: var(--shadow);
   }
-  .card-1 { transform: rotate(-1deg); transform-origin: left center; }
   .card-2 {
-    transform: rotate(1deg);
-    transform-origin: right center;
     align-self: flex-end;
     width: 78%;
     display: flex;
@@ -475,7 +482,7 @@ const featureGroups: FeatureGroup[] = [
     justify-content: space-around;
   }
   @media (max-width: 900px) {
-    .card-1, .card-2 { transform: none; width: 100%; }
+    .card-2 { width: 100%; }
   }
 
   .card-head {
@@ -562,9 +569,10 @@ const featureGroups: FeatureGroup[] = [
 
   .section-head {
     max-width: 720px;
-    margin-bottom: 56px;
+    margin: 0 auto 56px;
+    text-align: center;
   }
-  .section-head p { font-size: 1.05rem; }
+  .section-head p { font-size: 1.05rem; margin-left: auto; margin-right: auto; }
 
   .feature-group + .feature-group {
     margin-top: 96px;
@@ -573,11 +581,10 @@ const featureGroups: FeatureGroup[] = [
   }
 
   .group-head {
-    display: flex;
-    align-items: baseline;
-    gap: 24px;
-    flex-wrap: wrap;
-    margin-bottom: 40px;
+    display: block;
+    text-align: center;
+    max-width: 720px;
+    margin: 0 auto 40px;
   }
 
   .group-label {
@@ -609,7 +616,7 @@ const featureGroups: FeatureGroup[] = [
     letter-spacing: -0.02em;
   }
   .group-intro {
-    margin: 0;
+    margin: 0 auto;
     color: var(--text-dim);
     font-size: 1.0625rem;
     max-width: 620px;
@@ -628,34 +635,37 @@ const featureGroups: FeatureGroup[] = [
 
   .feature-list {
     list-style: none;
-    margin: 0;
+    margin: 0 auto;
     padding: 0;
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 16px;
+    max-width: 1040px;
   }
-  @media (max-width: 800px) { .feature-list { grid-template-columns: 1fr; } }
+  @media (max-width: 800px) { .feature-list { grid-template-columns: 1fr; max-width: 460px; } }
 
   .feature {
     position: relative;
     display: flex;
-    gap: 14px;
-    align-items: flex-start;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 12px;
     background: var(--bg-elev);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 20px 22px;
+    padding: 28px 24px;
     transition: border-color 160ms ease, transform 160ms ease;
   }
   .feature:hover { border-color: rgba(0,224,84,0.35); transform: translateY(-2px); }
   .feature h4 {
     color: var(--text);
-    margin: 0 0 4px;
-    font-size: 0.975rem;
+    margin: 0 0 6px;
+    font-size: 1.05rem;
     font-weight: 600;
     letter-spacing: -0.005em;
   }
-  .feature p { margin: 0; font-size: 0.9rem; line-height: 1.55; color: var(--text-dim); }
+  .feature p { margin: 0; font-size: 0.95rem; line-height: 1.55; color: var(--text-dim); }
 
   .feature-text { min-width: 0; }
 
@@ -663,9 +673,9 @@ const featureGroups: FeatureGroup[] = [
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 34px;
-    height: 34px;
-    border-radius: 9px;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
     background: var(--bg-elev-2);
     border: 1px solid var(--border);
     color: var(--lb-green);
@@ -688,8 +698,10 @@ const featureGroups: FeatureGroup[] = [
 
   .install-grid {
     display: grid;
-    grid-template-columns: 1.2fr 1fr;
+    grid-template-columns: 1fr 1fr;
     gap: 28px;
+    max-width: 1200px;
+    margin: 0 auto;
   }
   @media (max-width: 800px) { .install-grid { grid-template-columns: 1fr; } }
 
@@ -698,7 +710,27 @@ const featureGroups: FeatureGroup[] = [
     background: var(--bg-elev);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
-    padding: 32px;
+    padding: 40px;
+    font-size: 1.0625rem;
+  }
+  .install-card h3 { font-size: 1.375rem; margin: 0 0 8px; }
+  .install-card .steps { margin-top: 18px; font-size: 1rem; }
+  .install-card .steps li { margin-bottom: 12px; }
+  .install-card .text-link { font-size: 15px; margin-top: 18px; }
+  .install-badge { top: 20px; right: 20px; font-size: 11px; padding: 5px 12px; }
+
+  @media (max-width: 640px) {
+    .install-grid { gap: 14px; }
+    .install-card { padding: 18px; font-size: 0.875rem; border-radius: 12px; }
+    .install-card h3 { font-size: 0.95rem; margin: 0 0 4px; }
+    .install-card .steps { margin-top: 8px; font-size: 0.825rem; padding-left: 1.2em; }
+    .install-card .steps li { margin-bottom: 6px; line-height: 1.5; }
+    .install-card .text-link { font-size: 13px; margin-top: 10px; }
+    .install-badge { top: 12px; right: 12px; font-size: 10px; padding: 3px 8px; }
+    .reqs { gap: 6px; margin-top: 20px; }
+    .req { padding: 7px 10px; }
+    .req-label { font-size: 10px; }
+    .req-value { font-size: 12px; }
   }
   .install-card-featured {
     border-color: rgba(0,224,84,0.35);
@@ -739,6 +771,7 @@ const featureGroups: FeatureGroup[] = [
   .reqs {
     display: flex;
     flex-wrap: wrap;
+    justify-content: center;
     gap: 10px;
     margin-top: 28px;
   }
@@ -757,24 +790,28 @@ const featureGroups: FeatureGroup[] = [
   .setup-steps {
     list-style: none;
     padding: 0;
-    margin: 0;
+    margin: 0 auto;
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 20px;
+    max-width: 1000px;
   }
-  @media (max-width: 800px) { .setup-steps { grid-template-columns: 1fr; } }
+  @media (max-width: 800px) { .setup-steps { grid-template-columns: 1fr; max-width: 460px; } }
   .setup-steps li {
     background: var(--bg-elev);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
-    padding: 26px;
+    padding: 30px 24px;
     display: flex;
-    gap: 18px;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 14px;
   }
   .step-num {
     flex-shrink: 0;
-    width: 36px;
-    height: 36px;
+    width: 42px;
+    height: 42px;
     border-radius: 50%;
     background: linear-gradient(135deg, var(--lb-green), var(--lb-blue));
     color: #04140a;
@@ -782,9 +819,10 @@ const featureGroups: FeatureGroup[] = [
     align-items: center;
     justify-content: center;
     font-weight: 700;
+    font-size: 15px;
   }
-  .step-body h3 { margin-bottom: 4px; }
-  .step-body p { margin: 0; font-size: 0.95rem; }
+  .step-body h3 { font-size: 1.1rem; margin-bottom: 6px; }
+  .step-body p { margin: 0; font-size: 1rem; line-height: 1.55; }
 
   .tip {
     margin-top: 32px;

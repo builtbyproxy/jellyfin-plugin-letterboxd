@@ -85,12 +85,16 @@ const canonical = new URL(Astro.url.pathname, Astro.site).toString();
 
       .container {
         width: 100%;
-        max-width: 1400px;
-        margin: 0 auto;
+        max-width: 1320px;
+        margin-left: auto;
+        margin-right: auto;
         padding: 0 48px;
       }
-      @media (max-width: 640px) {
-        .container { padding: 0 20px; }
+      @media (max-width: 900px) {
+        .container { padding: 0 32px; }
+      }
+      @media (max-width: 480px) {
+        .container { padding: 0 24px; }
       }
 
       section { padding: 112px 0; }

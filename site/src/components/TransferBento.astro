@@ -133,6 +133,11 @@ const watchlist = [
     gap: 18px;
     min-height: 220px;
   }
+  @media (max-width: 520px) {
+    .tile { padding: 20px; min-height: 0; gap: 14px; }
+    .tile-meta { font-size: 10px; padding: 2px 6px; }
+    .tile-label { font-size: 11px; }
+  }
   .tile::before {
     content: '';
     position: absolute;
@@ -224,6 +229,11 @@ const watchlist = [
     align-items: center;
     justify-items: center;
     flex: 1;
+  }
+  @media (max-width: 440px) {
+    .fav-body { grid-template-columns: 1fr; gap: 14px; }
+    .fav-pulse { order: 2; }
+    .fav-col-right { order: 3; }
   }
   .fav-col {
     display: flex;
@@ -366,10 +376,12 @@ const watchlist = [
   .posters {
     display: grid;
     grid-template-columns: repeat(8, 1fr);
-    gap: 6px;
+    gap: 8px;
     flex: 1;
   }
-  @media (max-width: 500px) { .posters { grid-template-columns: repeat(4, 1fr); } }
+  @media (max-width: 1100px) { .posters { grid-template-columns: repeat(4, 1fr); } }
+  @media (max-width: 800px)  { .posters { grid-template-columns: repeat(8, 1fr); } }
+  @media (max-width: 560px)  { .posters { grid-template-columns: repeat(4, 1fr); } }
   .poster {
     position: relative;
     aspect-ratio: 2 / 3;

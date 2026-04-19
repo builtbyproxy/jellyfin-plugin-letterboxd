@@ -83,6 +83,13 @@ const activity = [
     flex-direction: column;
     gap: 20px;
   }
+  @media (max-width: 560px) {
+    .dash { padding: 20px; gap: 16px; }
+    .dash-head { flex-wrap: wrap; }
+    .stat-num { font-size: 20px; }
+    .stat-cell { padding: 12px 14px; }
+    .dash-btn { display: none; }
+  }
 
   .dash-head {
     display: flex;
@@ -220,12 +227,16 @@ const activity = [
   }
   .activity li {
     display: grid;
-    grid-template-columns: 18px 1fr auto auto;
+    grid-template-columns: 18px minmax(0, 1fr) auto auto;
     align-items: center;
     gap: 8px;
     font-size: 12px;
     padding: 4px 0;
     border-bottom: 1px dashed var(--border);
+  }
+  @media (max-width: 420px) {
+    .activity li { grid-template-columns: 18px minmax(0, 1fr) auto; }
+    .act-year { display: none; }
   }
   .activity li:last-child { border-bottom: 0; }
   .act-status {

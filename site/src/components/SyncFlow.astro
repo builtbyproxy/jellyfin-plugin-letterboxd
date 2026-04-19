@@ -84,9 +84,13 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
     align-items: stretch;
     width: 100%;
   }
-  @media (max-width: 720px) {
+  @media (max-width: 860px) {
     .flow { grid-template-columns: 1fr; gap: 16px; }
     .flow-pipe { display: none; }
+  }
+  @media (max-width: 520px) {
+    .flow-panel { padding: 18px; min-height: 0; gap: 14px; }
+    .flow-head { font-size: 11px; }
   }
 
   .flow-panel {
