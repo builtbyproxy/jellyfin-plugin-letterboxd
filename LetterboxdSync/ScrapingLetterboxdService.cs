@@ -12,9 +12,9 @@ public class ScrapingLetterboxdService : ILetterboxdService
     private readonly LetterboxdScraper _scraper;
     private readonly LetterboxdDiary _diary;
 
-    public ScrapingLetterboxdService(ILogger logger)
+    public ScrapingLetterboxdService(ILogger logger, string? userAgent = null)
     {
-        _http = new LetterboxdHttpClient(logger);
+        _http = new LetterboxdHttpClient(logger, userAgent);
         _auth = new LetterboxdAuth(_http, logger);
         _scraper = new LetterboxdScraper(_http, logger);
         _diary = new LetterboxdDiary(_http, _auth, _scraper, logger);

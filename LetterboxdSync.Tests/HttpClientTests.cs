@@ -16,6 +16,38 @@ public class HttpClientTests
     private static readonly ILogger TestLogger = NullLoggerFactory.Instance.CreateLogger("test");
 
     [Fact]
+    public void DefaultUserAgent_AppliedWhenNoOverride()
+    {
+        using var http = new LetterboxdHttpClient(TestLogger);
+        Assert.Equal(LetterboxdHttpClient.DefaultUserAgent,
+            http.Http.DefaultRequestHeaders.UserAgent.ToString());
+    }
+
+    [Fact]
+    public void CustomUserAgent_AppliedWhenProvided()
+    {
+        const string chromeUa = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+        using var http = new LetterboxdHttpClient(TestLogger, chromeUa);
+        Assert.Equal(chromeUa, http.Http.DefaultRequestHeaders.UserAgent.ToString());
+    }
+
+    [Fact]
+    public void InvalidUserAgent_FallsBackToDefault()
+    {
+        using var http = new LetterboxdHttpClient(TestLogger, "this is not a valid \0 ua");
+        Assert.Equal(LetterboxdHttpClient.DefaultUserAgent,
+            http.Http.DefaultRequestHeaders.UserAgent.ToString());
+    }
+
+    [Fact]
+    public void WhitespaceUserAgent_FallsBackToDefault()
+    {
+        using var http = new LetterboxdHttpClient(TestLogger, "   ");
+        Assert.Equal(LetterboxdHttpClient.DefaultUserAgent,
+            http.Http.DefaultRequestHeaders.UserAgent.ToString());
+    }
+
+    [Fact]
     public void SetRawCookies_ParsesMultipleCookies()
     {
         using var http = new LetterboxdHttpClient(TestLogger);

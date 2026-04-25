@@ -85,7 +85,7 @@ public class SyncTask : IScheduledTask
             try
             {
                 service = await LetterboxdServiceFactory.CreateAuthenticatedAsync(
-                    account.LetterboxdUsername, account.LetterboxdPassword, account.RawCookies, _logger)
+                    account.LetterboxdUsername, account.LetterboxdPassword, account.RawCookies, _logger, account.UserAgent)
                     .ConfigureAwait(false);
             }
             catch (Exception ex)

@@ -7,7 +7,7 @@ namespace LetterboxdSync;
 public static class LetterboxdServiceFactory
 {
     public static async Task<ILetterboxdService> CreateAuthenticatedAsync(
-        string username, string password, string? rawCookies, ILogger logger)
+        string username, string password, string? rawCookies, ILogger logger, string? userAgent = null)
     {
         try
         {
@@ -22,7 +22,7 @@ public static class LetterboxdServiceFactory
                 username, ex.Message);
         }
 
-        var scraping = new ScrapingLetterboxdService(logger);
+        var scraping = new ScrapingLetterboxdService(logger, userAgent);
         await scraping.AuthenticateAsync(username, password, rawCookies).ConfigureAwait(false);
         logger.LogInformation("Using web scraping fallback for {Username}", username);
         return scraping;

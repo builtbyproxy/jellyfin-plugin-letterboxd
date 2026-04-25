@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.7.0.0",
+        "changelog": "Per-account User-Agent override so Cloudflare cookies copied from any browser (Chrome, Safari, etc.) work without UA mismatch",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/releases/download/v1.7.0/jellyfin-plugin-letterboxd-v1.7.0.zip",
+        "checksum": "PLACEHOLDER",
+        "timestamp": "2026-04-25T00:00:00Z"
+      },
+      {
         "version": "1.6.1.0",
         "changelog": "Fix review posting via official API: resolve film LID from TMDb ID instead of slug (fixes #12)",
         "targetAbi": "10.11.0.0",
