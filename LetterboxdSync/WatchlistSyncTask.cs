@@ -45,6 +45,12 @@ public class WatchlistSyncTask : IScheduledTask
     {
         var users = _userManager.Users.ToList();
 
+        JellyseerrClient? jellyseerr = null;
+        if (JellyseerrClient.IsConfigured(Config.JellyseerrUrl, Config.JellyseerrApiKey))
+        {
+            jellyseerr = new JellyseerrClient(Config.JellyseerrUrl!, Config.JellyseerrApiKey!, _logger);
+        }
+
         foreach (var user in users)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -134,14 +140,16 @@ public class WatchlistSyncTask : IScheduledTask
             }
             else
             {
-                var existingItems = _libraryManager.GetItemList(new InternalItemsQuery(user)
-                {
-                    ParentId = playlist.Id,
-                    Recursive = false
-                });
-                var existingIds = existingItems.Select(c => c.Id).ToHashSet();
+                // Source of truth: Playlist.LinkedChildren contains the wrapped media item IDs
+                // (the underlying Movie GUIDs). Querying ParentId returns playlist *entries* whose
+                // BaseItem.Id is the entry GUID, not the movie GUID — using that for dedup compared
+                // entry IDs against movie IDs and never matched, causing duplicates each run.
+                var playlistObj = (Playlist)playlist;
+                var existingIds = playlistObj.LinkedChildren
+                    .Where(lc => lc.ItemId.HasValue)
+                    .Select(lc => lc.ItemId!.Value)
+                    .ToHashSet();
 
-                // Add new items
                 var newItems = watchlistItemIds.Where(id => !existingIds.Contains(id)).ToArray();
                 if (newItems.Length > 0)
                 {
@@ -155,28 +163,87 @@ public class WatchlistSyncTask : IScheduledTask
                 // Guard: if the scrape returned zero results but the playlist has items,
                 // skip removal — an empty scrape result likely means Cloudflare blocked us,
                 // not that the user cleared their entire watchlist.
-                var removedItems = (tmdbIds.Count == 0 && existingIds.Count > 0)
+                var removedIds = (tmdbIds.Count == 0 && existingIds.Count > 0)
                     ? Array.Empty<string>()
-                    : existingItems
-                        .Where(item => !watchlistItemIds.Contains(item.Id))
-                        .Select(item => item.Id.ToString("N"))
+                    : existingIds
+                        .Where(id => !watchlistItemIds.Contains(id))
+                        .Select(id => id.ToString("N"))
                         .ToArray();
 
-                if (removedItems.Length > 0)
+                if (removedIds.Length > 0)
                 {
-                    await _playlistManager.RemoveItemFromPlaylistAsync(playlist.Id.ToString("N"), removedItems)
+                    await _playlistManager.RemoveItemFromPlaylistAsync(playlist.Id.ToString("N"), removedIds)
                         .ConfigureAwait(false);
                     _logger.LogInformation("Removed {Count} films from playlist '{Name}' for {Username}",
-                        removedItems.Length, playlistName, user.Username);
+                        removedIds.Length, playlistName, user.Username);
                 }
 
-                if (newItems.Length == 0 && removedItems.Length == 0)
+                if (newItems.Length == 0 && removedIds.Length == 0)
                 {
                     _logger.LogInformation("Playlist '{Name}' already up to date for {Username}",
                         playlistName, user.Username);
                 }
             }
+
+            // Auto-request unmatched watchlist films via Jellyseerr.
+            if (account.AutoRequestWatchlist && jellyseerr != null)
+            {
+                var matchedTmdbIds = new HashSet<int>();
+                foreach (var tmdbId in tmdbIds)
+                {
+                    var match = allMovies.FirstOrDefault(m =>
+                        m.GetProviderId(MetadataProvider.Tmdb) == tmdbId.ToString());
+                    if (match != null) matchedTmdbIds.Add(tmdbId);
+                }
+                var unmatchedTmdbIds = tmdbIds.Where(id => !matchedTmdbIds.Contains(id)).ToList();
+
+                if (unmatchedTmdbIds.Count > 0)
+                {
+                    int? jellyseerrUserId;
+                    try
+                    {
+                        jellyseerrUserId = await jellyseerr.GetJellyseerrUserIdAsync(account.UserJellyfinId).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning("Could not fetch Jellyseerr user map for {Username}: {Message}",
+                            user.Username, ex.Message);
+                        jellyseerrUserId = null;
+                    }
+
+                    if (jellyseerrUserId == null)
+                    {
+                        _logger.LogWarning("No Jellyseerr user linked to Jellyfin user {Username}; skipping auto-request",
+                            user.Username);
+                    }
+                    else
+                    {
+                        var requested = 0;
+                        var failed = 0;
+                        foreach (var tmdbId in unmatchedTmdbIds)
+                        {
+                            cancellationToken.ThrowIfCancellationRequested();
+                            try
+                            {
+                                if (await jellyseerr.RequestMovieAsync(tmdbId, jellyseerrUserId.Value).ConfigureAwait(false))
+                                    requested++;
+                                else
+                                    failed++;
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogWarning("Jellyseerr request errored for TMDb {TmdbId}: {Message}", tmdbId, ex.Message);
+                                failed++;
+                            }
+                        }
+                        _logger.LogInformation("Jellyseerr auto-request for {Username}: {Requested} requested, {Failed} failed of {Total} unmatched",
+                            user.Username, requested, failed, unmatchedTmdbIds.Count);
+                    }
+                }
+            }
         }
+
+        jellyseerr?.Dispose();
 
         progress.Report(100);
     }

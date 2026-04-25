@@ -21,6 +21,8 @@ public class AccountUpdateRequest
     public bool EnableWatchlistSync { get; set; }
 
     public bool EnableDiaryImport { get; set; }
+
+    public bool AutoRequestWatchlist { get; set; }
 }
 
 public class TestConnectionRequest
@@ -32,4 +34,10 @@ public class TestConnectionRequest
     public string? RawCookies { get; set; }
 
     public string? UserAgent { get; set; }
+}
+
+public class JellyseerrTestRequest
+{
+    public string? Url { get; set; }
+    public string? ApiKey { get; set; }
 }

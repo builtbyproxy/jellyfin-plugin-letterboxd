@@ -98,6 +98,7 @@ public class LetterboxdController : ControllerBase
                 dateFilterDays = 7,
                 enableWatchlistSync = false,
                 enableDiaryImport = false,
+                autoRequestWatchlist = false,
                 isConfigured = false
             });
         }
@@ -114,6 +115,7 @@ public class LetterboxdController : ControllerBase
             dateFilterDays = account.DateFilterDays,
             enableWatchlistSync = account.EnableWatchlistSync,
             enableDiaryImport = account.EnableDiaryImport,
+            autoRequestWatchlist = account.AutoRequestWatchlist,
             isConfigured = true
         });
     }
@@ -144,6 +146,7 @@ public class LetterboxdController : ControllerBase
         account.DateFilterDays = request.DateFilterDays;
         account.EnableWatchlistSync = request.EnableWatchlistSync;
         account.EnableDiaryImport = request.EnableDiaryImport;
+        account.AutoRequestWatchlist = request.AutoRequestWatchlist;
 
         Plugin.Instance!.SaveConfiguration();
         _logger.LogInformation("User {UserId} saved their Letterboxd account settings", userId);
@@ -170,6 +173,33 @@ public class LetterboxdController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogWarning("Test connection failed for {Username}: {Message}", request.LetterboxdUsername, ex.Message);
+            return BadRequest(new { success = false, error = ex.Message });
+        }
+    }
+
+    [HttpPost("TestJellyseerr")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult> TestJellyseerr([FromBody] JellyseerrTestRequest request)
+    {
+        if (!JellyseerrClient.IsConfigured(request.Url, request.ApiKey))
+            return BadRequest(new { success = false, error = "URL and API key are required" });
+
+        try
+        {
+            using var client = new JellyseerrClient(request.Url!, request.ApiKey!, _logger);
+            var userId = await client.GetJellyseerrUserIdAsync(GetCurrentUserId() ?? string.Empty)
+                .ConfigureAwait(false);
+            return Ok(new
+            {
+                success = true,
+                linkedToCurrentUser = userId.HasValue,
+                jellyseerrUserId = userId
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("Jellyseerr test failed: {Message}", ex.Message);
             return BadRequest(new { success = false, error = ex.Message });
         }
     }

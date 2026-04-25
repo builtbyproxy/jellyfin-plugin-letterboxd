@@ -25,4 +25,6 @@ public class Account
     public bool EnableWatchlistSync { get; set; }
 
     public bool EnableDiaryImport { get; set; }
+
+    public bool AutoRequestWatchlist { get; set; }
 }

@@ -106,7 +106,20 @@
 
                 <!-- SETTINGS TAB -->
                 <div id="tab-settings" class="lb-tab-content" style="display:none;">
-                    <h3>User Accounts</h3>
+                    <h3>Jellyseerr Integration <span class="c-muted" style="font-size:0.7em;">(optional)</span></h3>
+                    <p class="c-muted" style="font-size:0.9em;">Auto-request films from a user's Letterboxd watchlist that aren't yet in your Jellyfin library. Requests are attributed to each user's matching Jellyseerr account (matched by Jellyfin User ID).</p>
+                    <div class="lb-account">
+                        <div style="margin-bottom:0.5em;"><label class="lb-field">Jellyseerr URL</label>
+                            <input type="text" id="jellyseerrUrl" placeholder="http://192.168.1.122:5055" /></div>
+                        <div style="margin-bottom:0.5em;"><label class="lb-field">Jellyseerr API Key</label>
+                            <input type="password" id="jellyseerrApiKey" placeholder="Settings &rarr; General &rarr; API Key" /></div>
+                        <div style="display:flex;gap:0.7em;align-items:center;">
+                            <button type="button" class="lb-btn lb-btn-secondary" id="testJellyseerrBtn">Test Connection</button>
+                            <span id="jellyseerrTestStatus" class="c-muted" style="font-size:0.85em;"></span>
+                        </div>
+                    </div>
+
+                    <h3 style="margin-top:1.5em;">User Accounts</h3>
                     <p class="c-muted" style="font-size:0.9em;">Map Jellyfin users to their Letterboxd accounts.</p>
                     <div id="accountsList"></div>
                     <button type="button" class="lb-btn lb-btn-secondary" id="addAccountBtn" style="margin-top:1em;">+ Add Account</button>
@@ -217,6 +230,10 @@
                                 + '<span class="lb-check-title">Mirror Letterboxd watchlist as a Jellyfin playlist</span>'
                                 + '<span class="lb-check-desc">Pulls your Letterboxd watchlist daily and mirrors it into a Jellyfin playlist named "Letterboxd Watchlist". Adds new films and removes ones taken off Letterboxd. Films not in your library are skipped.</span>'
                                 + '</span></label>'
+                                + '<label><input type="checkbox" class="autoRequestWatchlist" /><span class="lb-check-text">'
+                                + '<span class="lb-check-title">Auto-request unmatched watchlist films via Jellyseerr</span>'
+                                + '<span class="lb-check-desc">When a watchlisted film is not in the Jellyfin library, submit a request to Jellyseerr (configure URL + API key above). Requests are attributed to this user\'s Jellyseerr account (matched by Jellyfin User ID). Requires Jellyseerr to be configured.</span>'
+                                + '</span></label>'
                                 + '<label><input type="checkbox" class="enableDiaryImport" /><span class="lb-check-text">'
                                 + '<span class="lb-check-title">Import Letterboxd diary as Jellyfin watched</span>'
                                 + '<span class="lb-check-desc">Reverse direction: marks films in your Jellyfin library as played if they are already in your Letterboxd diary. Useful for new Jellyfin users who already have history on Letterboxd.</span>'
@@ -243,6 +260,7 @@
                                 entry.querySelector('.enableDateFilter').checked = account.EnableDateFilter === true;
                                 entry.querySelector('.dateFilterDays').value = account.DateFilterDays || 7;
                                 entry.querySelector('.enableWatchlistSync').checked = account.EnableWatchlistSync === true;
+                                entry.querySelector('.autoRequestWatchlist').checked = account.AutoRequestWatchlist === true;
                                 entry.querySelector('.enableDiaryImport').checked = account.EnableDiaryImport === true;
                                 if (account.EnableDateFilter) entry.querySelector('.dateFilterDaysContainer').style.display = '';
                             } else {
@@ -268,6 +286,7 @@
                                     EnableDateFilter: entry.querySelector('.enableDateFilter').checked,
                                     DateFilterDays: parseInt(entry.querySelector('.dateFilterDays').value, 10) || 7,
                                     EnableWatchlistSync: entry.querySelector('.enableWatchlistSync').checked,
+                                    AutoRequestWatchlist: entry.querySelector('.autoRequestWatchlist').checked,
                                     EnableDiaryImport: entry.querySelector('.enableDiaryImport').checked
                                 });
                             });
@@ -282,6 +301,8 @@
                                     document.getElementById('accountsList').innerHTML = '';
                                     if (config.Accounts && config.Accounts.length > 0)
                                         config.Accounts.forEach(function (a) { self.addAccount(a); });
+                                    document.getElementById('jellyseerrUrl').value = config.JellyseerrUrl || '';
+                                    document.getElementById('jellyseerrApiKey').value = config.JellyseerrApiKey || '';
                                 });
                             });
                         },
@@ -290,9 +311,42 @@
                             var self = this;
                             ApiClient.getPluginConfiguration(self.PluginId).then(function (config) {
                                 config.Accounts = self.collectAccounts();
+                                config.JellyseerrUrl = document.getElementById('jellyseerrUrl').value.trim() || null;
+                                config.JellyseerrApiKey = document.getElementById('jellyseerrApiKey').value.trim() || null;
                                 ApiClient.updatePluginConfiguration(self.PluginId, config).then(function () {
                                     Dashboard.processPluginConfigurationUpdateResult();
                                 });
+                            });
+                        },
+
+                        testJellyseerr: function () {
+                            var url = document.getElementById('jellyseerrUrl').value.trim();
+                            var key = document.getElementById('jellyseerrApiKey').value.trim();
+                            var statusEl = document.getElementById('jellyseerrTestStatus');
+                            if (!url || !key) {
+                                statusEl.innerHTML = '<span class="c-red">URL and API key are required.</span>';
+                                return;
+                            }
+                            statusEl.innerHTML = '<span class="c-muted">Testing...</span>';
+                            ApiClient.ajax({
+                                url: ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/TestJellyseerr'),
+                                type: 'POST', contentType: 'application/json',
+                                data: JSON.stringify({ url: url, apiKey: key })
+                            }).then(function (response) {
+                                response.json().then(function (data) {
+                                    if (data.linkedToCurrentUser) {
+                                        statusEl.innerHTML = '<span class="c-green">Connected. Your Jellyfin user is linked to Jellyseerr user ID ' + data.jellyseerrUserId + '.</span>';
+                                    } else {
+                                        statusEl.innerHTML = '<span class="c-blue">Connected, but no Jellyseerr user is linked to your Jellyfin account. Import Jellyfin users in Jellyseerr first.</span>';
+                                    }
+                                });
+                            }, function (err) {
+                                var msg = 'Connection failed';
+                                try {
+                                    var data = JSON.parse(err.responseText || '{}');
+                                    if (data.error) msg = data.error;
+                                } catch (e) {}
+                                statusEl.innerHTML = '<span class="c-red">' + msg + '</span>';
                             });
                         },
 
@@ -496,6 +550,7 @@
 
                             document.getElementById('addAccountBtn').addEventListener('click', function () { self.addAccount(null); });
                             document.getElementById('saveBtn').addEventListener('click', function () { self.saveSettings(); });
+                            document.getElementById('testJellyseerrBtn').addEventListener('click', function () { self.testJellyseerr(); });
                             document.getElementById('runSyncBtn').addEventListener('click', function () { self.runSync(); });
                             document.getElementById('reviewCancel').addEventListener('click', function () { document.getElementById('reviewModal').style.display = 'none'; });
                             document.getElementById('reviewSubmit').addEventListener('click', function () { self.submitReview(); });

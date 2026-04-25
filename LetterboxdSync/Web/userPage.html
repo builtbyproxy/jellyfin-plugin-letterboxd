@@ -39,8 +39,12 @@
                         width:100%; padding:0.4em; background:rgba(255,255,255,0.06); color:inherit; border:1px solid rgba(255,255,255,0.1); border-radius:4px; box-sizing:border-box;
                     }
                     .lb-account input[type=number] { width:80px; }
-                    .lb-checks { display:flex; flex-wrap:wrap; gap:0.5em 1.5em; margin-top:0.7em; }
-                    .lb-checks label { opacity:0.8; font-size:0.9em; }
+                    .lb-checks { display:flex; flex-direction:column; gap:0.7em; margin-top:0.9em; }
+                    .lb-checks label { display:flex; align-items:flex-start; gap:0.6em; cursor:pointer; opacity:1; }
+                    .lb-checks label input[type=checkbox] { margin-top:0.25em; flex:none; }
+                    .lb-checks .lb-check-text { display:flex; flex-direction:column; gap:0.15em; }
+                    .lb-checks .lb-check-title { font-size:0.95em; opacity:0.9; }
+                    .lb-checks .lb-check-desc { font-size:0.8em; opacity:0.5; line-height:1.35; }
 
                     .lb-btn { border:none; padding:0.5em 1.5em; border-radius:4px; cursor:pointer; font-weight:bold; font-size:0.95em; transition: opacity 0.2s; }
                     .lb-btn:hover { opacity:0.85; }
@@ -133,6 +137,11 @@
                             <label class="lb-field">Raw Cookies <span class="c-muted">(optional, Cloudflare bypass)</span></label>
                             <input type="text" id="rawCookies" placeholder="Paste cookie header if login gets 403" />
                         </div>
+                        <div style="margin-bottom:0.7em;">
+                            <label class="lb-field">User-Agent <span class="c-muted">(optional, must match the browser used to copy cookies)</span></label>
+                            <input type="text" id="userAgent" placeholder="Leave blank for default (Firefox 134 on Windows)" />
+                            <div class="c-muted" style="font-size:0.8em;margin-top:0.3em;">Cloudflare ties the <code>cf_clearance</code> cookie to the exact User-Agent that solved the challenge. If you copied cookies from Chrome, paste Chrome's UA here.</div>
+                        </div>
 
                         <div style="margin-top:1em;margin-bottom:0.5em;">
                             <button type="button" class="lb-btn lb-btn-secondary" id="testBtn">Test Connection</button>
@@ -141,11 +150,30 @@
 
                         <h4 style="margin-top:1.5em;margin-bottom:0.5em;">Sync Preferences</h4>
                         <div class="lb-checks">
-                            <label><input type="checkbox" id="accountEnabled" /> Enabled</label>
-                            <label><input type="checkbox" id="syncFavorites" /> Favorites as liked</label>
-                            <label><input type="checkbox" id="enableDateFilter" /> Recently played only</label>
-                            <label><input type="checkbox" id="enableWatchlistSync" /> Watchlist to playlist</label>
-                            <label><input type="checkbox" id="enableDiaryImport" /> Import diary as played</label>
+                            <label><input type="checkbox" id="accountEnabled" /><span class="lb-check-text">
+                                <span class="lb-check-title">Enabled</span>
+                                <span class="lb-check-desc">Master switch for your account. When unchecked, no diary, watchlist, or playback sync runs for you. Saved settings are kept.</span>
+                            </span></label>
+                            <label><input type="checkbox" id="syncFavorites" /><span class="lb-check-text">
+                                <span class="lb-check-title">Mark Jellyfin favourites as liked on Letterboxd</span>
+                                <span class="lb-check-desc">When a film is in your Jellyfin favourites, the diary entry on Letterboxd gets the red heart (liked). Otherwise it syncs as a plain watch.</span>
+                            </span></label>
+                            <label><input type="checkbox" id="enableDateFilter" /><span class="lb-check-text">
+                                <span class="lb-check-title">Only sync recently played films</span>
+                                <span class="lb-check-desc">Limit the catch-up sync to films watched within the last N days (set below). Useful on first run if you don't want to backfill years of history.</span>
+                            </span></label>
+                            <label><input type="checkbox" id="enableWatchlistSync" /><span class="lb-check-text">
+                                <span class="lb-check-title">Mirror Letterboxd watchlist as a Jellyfin playlist</span>
+                                <span class="lb-check-desc">Pulls your Letterboxd watchlist daily and mirrors it into a Jellyfin playlist named "Letterboxd Watchlist". Adds new films and removes ones taken off Letterboxd. Films not in your library are skipped.</span>
+                            </span></label>
+                            <label><input type="checkbox" id="autoRequestWatchlist" /><span class="lb-check-text">
+                                <span class="lb-check-title">Auto-request unmatched watchlist films via Jellyseerr</span>
+                                <span class="lb-check-desc">When a watchlisted film is not in the Jellyfin library, request it through Jellyseerr. The request is attributed to your Jellyseerr account (matched by your Jellyfin login). The admin must have configured Jellyseerr in the plugin settings.</span>
+                            </span></label>
+                            <label><input type="checkbox" id="enableDiaryImport" /><span class="lb-check-text">
+                                <span class="lb-check-title">Import Letterboxd diary as Jellyfin watched</span>
+                                <span class="lb-check-desc">Reverse direction: marks films in your Jellyfin library as played if they are already in your Letterboxd diary.</span>
+                            </span></label>
                         </div>
                         <div id="dateFilterDaysContainer" style="display:none;margin-top:0.5em;">
                             <label class="lb-field">Days to look back</label>
@@ -279,11 +307,13 @@
                                 document.getElementById('lbUsername').value = a.letterboxdUsername || '';
                                 document.getElementById('lbPassword').value = a.letterboxdPassword || '';
                                 document.getElementById('rawCookies').value = a.rawCookies || '';
+                                document.getElementById('userAgent').value = a.userAgent || '';
                                 document.getElementById('accountEnabled').checked = a.enabled === true;
                                 document.getElementById('syncFavorites').checked = a.syncFavorites === true;
                                 document.getElementById('enableDateFilter').checked = a.enableDateFilter === true;
                                 document.getElementById('dateFilterDays').value = a.dateFilterDays || 7;
                                 document.getElementById('enableWatchlistSync').checked = a.enableWatchlistSync === true;
+                                document.getElementById('autoRequestWatchlist').checked = a.autoRequestWatchlist === true;
                                 document.getElementById('enableDiaryImport').checked = a.enableDiaryImport === true;
                                 document.getElementById('dateFilterDaysContainer').style.display = a.enableDateFilter ? '' : 'none';
                             })
@@ -303,11 +333,13 @@
                                 letterboxdUsername: document.getElementById('lbUsername').value,
                                 letterboxdPassword: document.getElementById('lbPassword').value,
                                 rawCookies: document.getElementById('rawCookies').value || null,
+                                userAgent: document.getElementById('userAgent').value || null,
                                 enabled: document.getElementById('accountEnabled').checked,
                                 syncFavorites: document.getElementById('syncFavorites').checked,
                                 enableDateFilter: document.getElementById('enableDateFilter').checked,
                                 dateFilterDays: parseInt(document.getElementById('dateFilterDays').value, 10) || 7,
                                 enableWatchlistSync: document.getElementById('enableWatchlistSync').checked,
+                                autoRequestWatchlist: document.getElementById('autoRequestWatchlist').checked,
                                 enableDiaryImport: document.getElementById('enableDiaryImport').checked
                             };
 
@@ -347,7 +379,8 @@
                             self.apiPost('Jellyfin.Plugin.LetterboxdSync/TestConnection', {
                                 letterboxdUsername: username,
                                 letterboxdPassword: password,
-                                rawCookies: document.getElementById('rawCookies').value || null
+                                rawCookies: document.getElementById('rawCookies').value || null,
+                                userAgent: document.getElementById('userAgent').value || null
                             })
                             .then(function (r) { return r.json(); })
                             .then(function (data) {
