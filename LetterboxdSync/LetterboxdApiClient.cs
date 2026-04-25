@@ -227,7 +227,7 @@ public class LetterboxdApiClient : ILetterboxdService
 
         for (int page = 0; page < 50; page++)
         {
-            var qp = $"perPage=100&member={Uri.EscapeDataString(_memberId)}";
+            var qp = "perPage=100";
             if (cursor != null)
                 qp += $"&cursor={Uri.EscapeDataString(cursor)}";
 
