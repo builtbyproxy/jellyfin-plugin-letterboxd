@@ -8,6 +8,8 @@ public class AccountUpdateRequest
 
     public string? RawCookies { get; set; }
 
+    public string? UserAgent { get; set; }
+
     public bool Enabled { get; set; }
 
     public bool SyncFavorites { get; set; }
@@ -28,4 +30,6 @@ public class TestConnectionRequest
     public string LetterboxdPassword { get; set; } = string.Empty;
 
     public string? RawCookies { get; set; }
+
+    public string? UserAgent { get; set; }
 }

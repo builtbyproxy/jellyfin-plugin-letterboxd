@@ -12,6 +12,8 @@ public class Account
 
     public string? RawCookies { get; set; }
 
+    public string? UserAgent { get; set; }
+
     public bool Enabled { get; set; }
 
     public bool SyncFavorites { get; set; }

@@ -17,18 +17,27 @@ public class LetterboxdHttpClient : IDisposable
     internal static readonly Uri BaseUri = new Uri("https://letterboxd.com/");
     internal const int MaxRetries = 3;
 
+    /// <summary>
+    /// Default browser User-Agent used when an account does not specify one.
+    /// Cloudflare binds <c>cf_clearance</c> cookies to the exact UA that solved the
+    /// challenge, so users who harvest cookies from a different browser must override
+    /// this with the UA of the browser they used.
+    /// </summary>
+    public const string DefaultUserAgent =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:134.0) Gecko/20100101 Firefox/134.0";
+
     private readonly ILogger _logger;
     internal readonly CookieContainer CookieContainer = new();
     private readonly HttpClientHandler _handler;
     internal readonly HttpClient Http;
     internal string Csrf = string.Empty;
 
-    public LetterboxdHttpClient(ILogger logger)
-        : this(logger, null)
+    public LetterboxdHttpClient(ILogger logger, string? userAgent = null)
+        : this(logger, null, userAgent)
     {
     }
 
-    internal LetterboxdHttpClient(ILogger logger, HttpMessageHandler? handler)
+    internal LetterboxdHttpClient(ILogger logger, HttpMessageHandler? handler, string? userAgent = null)
     {
         _logger = logger;
         _handler = handler as HttpClientHandler ?? new HttpClientHandler
@@ -42,9 +51,13 @@ public class LetterboxdHttpClient : IDisposable
             ? new HttpClient(handler, disposeHandler: false) { BaseAddress = BaseUri }
             : new HttpClient(_handler) { BaseAddress = BaseUri };
 
+        var ua = string.IsNullOrWhiteSpace(userAgent) ? DefaultUserAgent : userAgent!.Trim();
         Http.DefaultRequestHeaders.UserAgent.Clear();
-        Http.DefaultRequestHeaders.UserAgent.ParseAdd(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:134.0) Gecko/20100101 Firefox/134.0");
+        if (!Http.DefaultRequestHeaders.UserAgent.TryParseAdd(ua))
+        {
+            logger.LogWarning("Invalid User-Agent override, falling back to default: {Ua}", ua);
+            Http.DefaultRequestHeaders.UserAgent.ParseAdd(DefaultUserAgent);
+        }
         Http.DefaultRequestHeaders.Accept.Clear();
         Http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("text/html"));
         Http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/xhtml+xml"));

@@ -86,7 +86,7 @@ public class PlaybackHandler : IHostedService, IDisposable
             try
             {
                 using var service = await LetterboxdServiceFactory.CreateAuthenticatedAsync(
-                    account.LetterboxdUsername, account.LetterboxdPassword, account.RawCookies, _logger)
+                    account.LetterboxdUsername, account.LetterboxdPassword, account.RawCookies, _logger, account.UserAgent)
                     .ConfigureAwait(false);
 
                 var film = await service.LookupFilmByTmdbIdAsync(tmdbId).ConfigureAwait(false);

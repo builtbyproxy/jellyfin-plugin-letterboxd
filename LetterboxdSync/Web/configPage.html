@@ -193,6 +193,9 @@
                                 + '<input type="password" class="lbPassword" /></div>'
                                 + '<div style="margin-bottom:0.5em;"><label class="lb-field">Raw Cookies <span class="c-muted">(optional, Cloudflare bypass)</span></label>'
                                 + '<input type="text" class="rawCookies" placeholder="Paste cookie header if login gets 403" /></div>'
+                                + '<div style="margin-bottom:0.5em;"><label class="lb-field">User-Agent <span class="c-muted">(optional, must match the browser used to copy cookies)</span></label>'
+                                + '<input type="text" class="userAgent" placeholder="Leave blank for default (Firefox 134 on Windows)" />'
+                                + '<div class="c-muted" style="font-size:0.8em;margin-top:0.3em;">Cloudflare ties the <code>cf_clearance</code> cookie to the exact User-Agent that solved the challenge. If you copied cookies from Chrome, paste Chrome\'s UA here. Find yours at <a href="https://www.whatismybrowser.com/detect/what-is-my-user-agent/" target="_blank" class="lb-link">whatismybrowser.com</a>.</div></div>'
                                 + '<div class="lb-checks">'
                                 + '<label><input type="checkbox" class="accountEnabled" /> Enabled</label>'
                                 + '<label><input type="checkbox" class="syncFavorites" /> Favorites as liked</label>'
@@ -215,6 +218,7 @@
                                 entry.querySelector('.lbUsername').value = account.LetterboxdUsername || '';
                                 entry.querySelector('.lbPassword').value = account.LetterboxdPassword || '';
                                 entry.querySelector('.rawCookies').value = account.RawCookies || '';
+                                entry.querySelector('.userAgent').value = account.UserAgent || '';
                                 entry.querySelector('.accountEnabled').checked = account.Enabled !== false;
                                 entry.querySelector('.syncFavorites').checked = account.SyncFavorites === true;
                                 entry.querySelector('.enableDateFilter').checked = account.EnableDateFilter === true;
@@ -239,6 +243,7 @@
                                     LetterboxdUsername: entry.querySelector('.lbUsername').value,
                                     LetterboxdPassword: entry.querySelector('.lbPassword').value,
                                     RawCookies: entry.querySelector('.rawCookies').value || null,
+                                    UserAgent: entry.querySelector('.userAgent').value || null,
                                     Enabled: entry.querySelector('.accountEnabled').checked,
                                     SyncFavorites: entry.querySelector('.syncFavorites').checked,
                                     EnableDateFilter: entry.querySelector('.enableDateFilter').checked,

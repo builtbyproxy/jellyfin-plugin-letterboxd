@@ -86,10 +86,13 @@ If login fails with a 403 error:
 1. Log into Letterboxd in your browser
 2. Open DevTools (F12) > Network tab
 3. Reload and click any request to `letterboxd.com`
-4. Copy the full **Cookie** header value
+4. Copy the **Cookie** header value (everything after `Cookie: `, not the label itself)
 5. Paste it into the **Raw Cookies** field
+6. Copy the **User-Agent** request header value from the same request and paste it into the **User-Agent** field
 
 The `cf_clearance` cookie expires periodically and may need refreshing.
+
+**Important:** Cloudflare ties `cf_clearance` to the exact User-Agent that solved the challenge. If you copied cookies from Chrome but leave the User-Agent field blank, the plugin sends the default Firefox UA and Cloudflare will reject the cookie. Always paste the User-Agent from the same browser you copied the cookies from. Leave it blank only if you copied cookies from Firefox 134 on Windows.
 
 ## Requirements
 

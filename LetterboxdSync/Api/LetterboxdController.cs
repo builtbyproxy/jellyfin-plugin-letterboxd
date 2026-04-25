@@ -91,6 +91,7 @@ public class LetterboxdController : ControllerBase
                 letterboxdUsername = string.Empty,
                 letterboxdPassword = string.Empty,
                 rawCookies = (string?)null,
+                userAgent = (string?)null,
                 enabled = false,
                 syncFavorites = false,
                 enableDateFilter = false,
@@ -106,6 +107,7 @@ public class LetterboxdController : ControllerBase
             letterboxdUsername = account.LetterboxdUsername,
             letterboxdPassword = account.LetterboxdPassword,
             rawCookies = account.RawCookies,
+            userAgent = account.UserAgent,
             enabled = account.Enabled,
             syncFavorites = account.SyncFavorites,
             enableDateFilter = account.EnableDateFilter,
@@ -135,6 +137,7 @@ public class LetterboxdController : ControllerBase
         account.LetterboxdUsername = request.LetterboxdUsername;
         account.LetterboxdPassword = request.LetterboxdPassword;
         account.RawCookies = request.RawCookies;
+        account.UserAgent = request.UserAgent;
         account.Enabled = request.Enabled;
         account.SyncFavorites = request.SyncFavorites;
         account.EnableDateFilter = request.EnableDateFilter;
@@ -159,7 +162,7 @@ public class LetterboxdController : ControllerBase
         try
         {
             using var service = await LetterboxdServiceFactory.CreateAuthenticatedAsync(
-                request.LetterboxdUsername, request.LetterboxdPassword, request.RawCookies, _logger)
+                request.LetterboxdUsername, request.LetterboxdPassword, request.RawCookies, _logger, request.UserAgent)
                 .ConfigureAwait(false);
 
             return Ok(new { success = true, letterboxdUsername = request.LetterboxdUsername });
@@ -195,7 +198,7 @@ public class LetterboxdController : ControllerBase
         try
         {
             using var service = await LetterboxdServiceFactory.CreateAuthenticatedAsync(
-                account.LetterboxdUsername, account.LetterboxdPassword, account.RawCookies, _logger)
+                account.LetterboxdUsername, account.LetterboxdPassword, account.RawCookies, _logger, account.UserAgent)
                 .ConfigureAwait(false);
 
             await service.PostReviewAsync(request.FilmSlug, request.ReviewText, request.ContainsSpoilers, request.IsRewatch, request.Date, request.Rating, request.TmdbId)
