@@ -12,7 +12,7 @@
         "changelog": "Per-account User-Agent override so Cloudflare cookies copied from any browser (Chrome, Safari, etc.) work without UA mismatch",
         "targetAbi": "10.11.0.0",
         "sourceUrl": "https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/releases/download/v1.7.0/jellyfin-plugin-letterboxd-v1.7.0.zip",
-        "checksum": "PLACEHOLDER",
+        "checksum": "d6281ab55367c645a3a3ff6bb7c62f5e",
         "timestamp": "2026-04-25T00:00:00Z"
       },
       {
