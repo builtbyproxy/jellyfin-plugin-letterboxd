@@ -94,7 +94,7 @@ const watchlist = [
   <div class="tile tile-watchlist">
     <div class="tile-head">
       <span class="tile-label">Watchlist</span>
-      <span class="tile-meta">Letterboxd → Jellyfin playlist</span>
+      <span class="tile-meta">Letterboxd → playlist · request the rest</span>
     </div>
     <div class="posters">
       {watchlist.map((p) => (
@@ -108,6 +108,8 @@ const watchlist = [
       <span class="wl-count">47 films</span>
       <span class="wl-arrow">→</span>
       <span class="wl-pill">Jellyfin playlist</span>
+      <span class="wl-arrow">·</span>
+      <span class="wl-pill wl-pill-seerr">Jellyseerr request if missing</span>
     </div>
   </div>
 </div>
@@ -405,7 +407,8 @@ const watchlist = [
   .watchlist-foot {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
+    flex-wrap: wrap;
     font-size: 12px;
     color: var(--text-dim);
   }
@@ -423,5 +426,10 @@ const watchlist = [
     border-radius: 999px;
     font-size: 11px;
     font-weight: 500;
+  }
+  .wl-pill-seerr {
+    background: rgba(255,140,0,0.12);
+    border-color: rgba(255,140,0,0.35);
+    color: #ffb86c;
   }
 </style>
