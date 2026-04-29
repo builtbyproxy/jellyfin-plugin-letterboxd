@@ -117,6 +117,13 @@
                             </tbody>
                         </table>
                     </div>
+                    <div id="historyPagination" style="display:none;margin-top:0.7em;align-items:center;gap:0.4em;flex-wrap:wrap;font-size:0.9em;">
+                        <button type="button" class="lb-btn lb-btn-secondary lb-page-btn" id="historyFirst" title="First page">&laquo;</button>
+                        <button type="button" class="lb-btn lb-btn-secondary lb-page-btn" id="historyPrev" title="Previous page">&lsaquo;</button>
+                        <span id="historyPageInfo" class="c-muted" style="margin:0 0.4em;"></span>
+                        <button type="button" class="lb-btn lb-btn-secondary lb-page-btn" id="historyNext" title="Next page">&rsaquo;</button>
+                        <button type="button" class="lb-btn lb-btn-secondary lb-page-btn" id="historyLast" title="Last page">&raquo;</button>
+                    </div>
                 </div>
 
                 <!-- MY ACCOUNT TAB -->
@@ -246,6 +253,9 @@
                         isAdmin: false,
                         currentSlug: '',
                         syncPoll: null,
+                        historyPageSize: 100,
+                        historyOffset: 0,
+                        historyTotal: 0,
 
                         resolveAuth: function () {
                             if (typeof ApiClient !== 'undefined') {
@@ -425,13 +435,20 @@
                             }).catch(function () {});
                         },
 
-                        loadHistory: function () {
-                            this.apiFetch('Jellyfin.Plugin.LetterboxdSync/History?count=100')
+                        loadHistory: function (resetToFirstPage) {
+                            var self = this;
+                            if (resetToFirstPage) self.historyOffset = 0;
+                            var url = 'Jellyfin.Plugin.LetterboxdSync/History?count=' + self.historyPageSize + '&offset=' + self.historyOffset;
+                            this.apiFetch(url)
                             .then(function (r) { return r.json(); })
-                            .then(function (events) {
+                            .then(function (resp) {
+                                // Backwards-compat: pre-1.9.1 returned a bare array.
+                                var events = (resp && resp.events) ? resp.events : (Array.isArray(resp) ? resp : []);
+                                self.historyTotal = (resp && typeof resp.total === 'number') ? resp.total : events.length;
+                                self.renderPaginator();
                                 var tbody = document.getElementById('historyBody');
                                 tbody.innerHTML = '';
-                                if (!events || events.length === 0) {
+                                if (events.length === 0) {
                                     tbody.innerHTML = '<tr><td colspan="5" style="padding:2em;text-align:center;" class="c-muted">No sync activity yet.</td></tr>';
                                     return;
                                 }
@@ -462,6 +479,28 @@
                                     tbody.appendChild(tr);
                                 });
                             }).catch(function () {});
+                        },
+
+                        renderPaginator: function () {
+                            var pager = document.getElementById('historyPagination');
+                            if (!pager) return;
+                            if (this.historyTotal <= this.historyPageSize) { pager.style.display = 'none'; return; }
+                            pager.style.display = 'flex';
+                            var totalPages = Math.max(1, Math.ceil(this.historyTotal / this.historyPageSize));
+                            var currentPage = Math.floor(this.historyOffset / this.historyPageSize) + 1;
+                            document.getElementById('historyPageInfo').textContent =
+                                'Page ' + currentPage + ' of ' + totalPages + ' (' + this.historyTotal + ' entries)';
+                            document.getElementById('historyFirst').disabled = currentPage === 1;
+                            document.getElementById('historyPrev').disabled = currentPage === 1;
+                            document.getElementById('historyNext').disabled = currentPage === totalPages;
+                            document.getElementById('historyLast').disabled = currentPage === totalPages;
+                        },
+
+                        gotoHistoryPage: function (page) {
+                            var totalPages = Math.max(1, Math.ceil(this.historyTotal / this.historyPageSize));
+                            var clamped = Math.min(Math.max(page, 1), totalPages);
+                            this.historyOffset = (clamped - 1) * this.historyPageSize;
+                            this.loadHistory(false);
                         },
 
                         pollProgress: function () {
@@ -624,6 +663,10 @@
                             document.getElementById('saveBtn').addEventListener('click', function () { self.saveAccount(); });
                             document.getElementById('testBtn').addEventListener('click', function () { self.testConnection(); });
                             document.getElementById('runSyncBtn').addEventListener('click', function () { self.runSync(); });
+                            document.getElementById('historyFirst').addEventListener('click', function () { self.gotoHistoryPage(1); });
+                            document.getElementById('historyPrev').addEventListener('click', function () { self.gotoHistoryPage(Math.floor(self.historyOffset / self.historyPageSize)); });
+                            document.getElementById('historyNext').addEventListener('click', function () { self.gotoHistoryPage(Math.floor(self.historyOffset / self.historyPageSize) + 2); });
+                            document.getElementById('historyLast').addEventListener('click', function () { self.gotoHistoryPage(Math.ceil(self.historyTotal / self.historyPageSize)); });
                             document.getElementById('reviewCancel').addEventListener('click', function () { document.getElementById('reviewModal').style.display = 'none'; });
                             document.getElementById('reviewSubmit').addEventListener('click', function () { self.submitReview(); });
                             document.getElementById('reviewRewatch').addEventListener('change', function () {
