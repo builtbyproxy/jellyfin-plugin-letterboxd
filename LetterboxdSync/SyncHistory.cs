@@ -33,7 +33,6 @@ public static class SyncHistory
 {
     private static readonly object _lock = new();
     private static List<SyncEvent>? _events;
-    private const int MaxEvents = 5000;
     private static ILogger? _logger;
 
     public static void SetLogger(ILogger logger) => _logger = logger;
@@ -129,14 +128,6 @@ public static class SyncHistory
             var events = LoadEvents();
             events.Add(evt);
 
-            // Trim oldest events if over the cap
-            bool trimmed = events.Count > MaxEvents;
-            if (trimmed)
-            {
-                events.Sort((a, b) => b.Timestamp.CompareTo(a.Timestamp));
-                events.RemoveRange(MaxEvents, events.Count - MaxEvents);
-            }
-
             try
             {
                 var path = DataPath;
@@ -144,15 +135,7 @@ public static class SyncHistory
                 if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
                     Directory.CreateDirectory(dir);
 
-                if (trimmed)
-                {
-                    // Full rewrite only when events were actually trimmed
-                    SaveAllEvents();
-                }
-                else
-                {
-                    File.AppendAllText(path, JsonSerializer.Serialize(evt) + Environment.NewLine);
-                }
+                File.AppendAllText(path, JsonSerializer.Serialize(evt) + Environment.NewLine);
             }
             catch (Exception ex)
             {
