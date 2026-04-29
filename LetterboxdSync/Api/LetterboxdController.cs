@@ -19,11 +19,13 @@ public class LetterboxdController : ControllerBase
 {
     private readonly ILogger<LetterboxdController> _logger;
     private readonly IUserManager _userManager;
+    private readonly LetterboxdSyncRunner _syncRunner;
 
-    public LetterboxdController(ILogger<LetterboxdController> logger, IUserManager userManager)
+    public LetterboxdController(ILogger<LetterboxdController> logger, IUserManager userManager, LetterboxdSyncRunner syncRunner)
     {
         _logger = logger;
         _userManager = userManager;
+        _syncRunner = syncRunner;
     }
 
     private static PluginConfiguration Config => Plugin.Instance!.Configuration;
@@ -47,6 +49,45 @@ public class LetterboxdController : ControllerBase
     public ActionResult GetProgress()
     {
         return Ok(SyncProgress.GetSnapshot());
+    }
+
+    /// <summary>
+    /// Trigger a sync for the calling user. Any logged-in user can call this; it only ever
+    /// touches their own Letterboxd account. Returns 202 immediately and runs in the background;
+    /// the UI polls /Progress for completion. Returns 409 if a sync is already running.
+    /// </summary>
+    [HttpPost("Sync")]
+    [ProducesResponseType(StatusCodes.Status202Accepted)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public ActionResult StartSync()
+    {
+        var userId = GetCurrentUserId();
+        if (string.IsNullOrEmpty(userId))
+            return BadRequest(new { error = "Could not determine user" });
+
+        if (LetterboxdSyncRunner.IsRunning)
+            return Conflict(new { error = "Sync already running" });
+
+        var account = Config.Accounts.FirstOrDefault(a => a.Enabled && a.UserJellyfinId == userId);
+        if (account == null)
+            return BadRequest(new { error = "No enabled Letterboxd account is configured for your user" });
+
+        // Fire and forget. Errors during the run are logged by the runner; the UI polls /Progress.
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _syncRunner.TryRunForUserAsync(userId, "manual", new Progress<double>(), System.Threading.CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "User-triggered sync for {UserId} crashed", userId);
+            }
+        });
+
+        return Accepted(new { started = true });
     }
 
     [HttpGet("Stats")]

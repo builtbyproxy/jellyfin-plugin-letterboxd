@@ -87,7 +87,7 @@
 
                 <!-- DASHBOARD TAB -->
                 <div id="tab-stats" class="lb-tab-content">
-                    <div id="adminSyncControls" style="display:none;">
+                    <div id="syncControls">
                         <div style="display:flex;align-items:center;gap:1em;margin-bottom:0.5em;">
                             <button type="button" class="lb-btn lb-btn-primary" id="runSyncBtn">Run Sync Now</button>
                             <span id="syncStatus" class="c-muted" style="font-size:0.9em;"></span>
@@ -464,14 +464,14 @@
                             }).catch(function () {});
                         },
 
-                        pollTask: function (taskId) {
+                        pollProgress: function () {
                             var self = this;
                             if (self.syncPoll) clearInterval(self.syncPoll);
                             self.syncPoll = setInterval(function () {
-                                self.apiFetch('ScheduledTasks/' + taskId)
+                                self.apiFetch('Jellyfin.Plugin.LetterboxdSync/Progress')
                                 .then(function (r) { return r.json(); })
-                                .then(function (t) {
-                                    if (t.State === 'Idle') {
+                                .then(function (p) {
+                                    if (!p || !p.isRunning) {
                                         clearInterval(self.syncPoll);
                                         self.syncPoll = null;
                                         document.getElementById('runSyncBtn').disabled = false;
@@ -479,12 +479,8 @@
                                         document.getElementById('syncProgressBar').style.display = 'none';
                                         self.loadStats();
                                         self.loadHistory();
+                                        return;
                                     }
-                                });
-                                self.apiFetch('Jellyfin.Plugin.LetterboxdSync/Progress')
-                                .then(function (r) { return r.json(); })
-                                .then(function (p) {
-                                    if (!p || !p.isRunning) return;
                                     document.getElementById('syncProgressBar').style.display = 'block';
                                     var detail = '';
                                     if (p.totalItems > 0) {
@@ -511,22 +507,24 @@
                             btn.disabled = true;
                             document.getElementById('syncStatus').textContent = 'Starting...';
 
-                            self.apiFetch('ScheduledTasks')
-                            .then(function (r) { return r.json(); })
-                            .then(function (tasks) {
-                                var task = tasks.find(function (t) { return t.Key === 'LetterboxdSync'; });
-                                if (!task) {
-                                    document.getElementById('syncStatus').innerHTML = '<span class="c-red">Task not found</span>';
-                                    btn.disabled = false;
+                            self.apiPost('Jellyfin.Plugin.LetterboxdSync/Sync', {})
+                            .then(function (r) {
+                                if (r.status === 409) {
+                                    document.getElementById('syncStatus').innerHTML = '<span class="c-blue">Sync already running, polling...</span>';
+                                    self.pollProgress();
                                     return;
                                 }
-                                fetch(self.serverUrl + '/ScheduledTasks/Running/' + task.Id, {
-                                    method: 'POST',
-                                    headers: { 'Authorization': 'MediaBrowser Token="' + self.token + '"' }
-                                }).then(function () {
-                                    document.getElementById('syncStatus').innerHTML = '<span class="c-green">Syncing...</span>';
-                                    self.pollTask(task.Id);
-                                });
+                                if (!r.ok) {
+                                    return r.json().then(function (data) {
+                                        document.getElementById('syncStatus').innerHTML = '<span class="c-red">' + (data.error || 'Failed to start sync') + '</span>';
+                                        btn.disabled = false;
+                                    });
+                                }
+                                document.getElementById('syncStatus').innerHTML = '<span class="c-green">Syncing...</span>';
+                                self.pollProgress();
+                            }).catch(function (err) {
+                                document.getElementById('syncStatus').innerHTML = '<span class="c-red">Error: ' + err.message + '</span>';
+                                btn.disabled = false;
                             });
                         },
 
@@ -596,29 +594,24 @@
                             var self = this;
                             self.initTabs();
 
-                            // Check if current user is admin
+                            // Show admin-only links to admins; sync controls are available to all users
                             self.apiFetch('Users/Me')
                             .then(function (r) { return r.json(); })
                             .then(function (user) {
                                 if (user.Policy && user.Policy.IsAdministrator) {
                                     self.isAdmin = true;
                                     document.getElementById('adminLink').style.display = '';
-                                    document.getElementById('adminSyncControls').style.display = '';
+                                }
+                            }).catch(function () {});
 
-                                    // Check if sync is already running
-                                    self.apiFetch('ScheduledTasks')
-                                    .then(function (r) { return r.json(); })
-                                    .then(function (tasks) {
-                                        var syncTask = tasks.find(function (t) { return t.Key === 'LetterboxdSync'; });
-                                        var diaryTask = tasks.find(function (t) { return t.Key === 'LetterboxdDiaryImport'; });
-                                        var running = (syncTask && syncTask.State === 'Running') ? syncTask :
-                                                      (diaryTask && diaryTask.State === 'Running') ? diaryTask : null;
-                                        if (running) {
-                                            document.getElementById('runSyncBtn').disabled = true;
-                                            document.getElementById('syncStatus').innerHTML = '<span class="c-green">Sync in progress...</span>';
-                                            self.pollTask(running.Id);
-                                        }
-                                    }).catch(function () {});
+                            // If a sync is already running (started by anyone), pick up polling
+                            self.apiFetch('Jellyfin.Plugin.LetterboxdSync/Progress')
+                            .then(function (r) { return r.json(); })
+                            .then(function (p) {
+                                if (p && p.isRunning) {
+                                    document.getElementById('runSyncBtn').disabled = true;
+                                    document.getElementById('syncStatus').innerHTML = '<span class="c-green">Sync in progress...</span>';
+                                    self.pollProgress();
                                 }
                             }).catch(function () {});
 
