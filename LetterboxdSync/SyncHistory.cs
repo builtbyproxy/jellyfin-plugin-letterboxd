@@ -166,15 +166,7 @@ public static class SyncHistory
     {
         lock (_lock)
         {
-            var events = LoadEvents();
-            SyncEvent? latest = null;
-            foreach (var e in events)
-            {
-                if (e.TmdbId != tmdbId) continue;
-                if (!string.Equals(e.Username, username, StringComparison.Ordinal)) continue;
-                if (latest == null || e.Timestamp > latest.Timestamp) latest = e;
-            }
-            return latest?.Status;
+            return GetLastStatusForFilm(LoadEvents(), username, tmdbId);
         }
     }
 
@@ -187,17 +179,35 @@ public static class SyncHistory
     {
         lock (_lock)
         {
-            var events = LoadEvents();
-            var target = viewingDate.Date;
-            foreach (var e in events)
-            {
-                if (e.TmdbId != tmdbId) continue;
-                if (!string.Equals(e.Username, username, StringComparison.Ordinal)) continue;
-                if (e.Status != SyncStatus.Success && e.Status != SyncStatus.Rewatch) continue;
-                if (e.ViewingDate?.Date == target) return true;
-            }
-            return false;
+            return WasSuccessfullySynced(LoadEvents(), username, tmdbId, viewingDate);
         }
+    }
+
+    // Pure overloads, exposed for unit testing without touching the on-disk store.
+
+    internal static SyncStatus? GetLastStatusForFilm(IEnumerable<SyncEvent> events, string username, int tmdbId)
+    {
+        SyncEvent? latest = null;
+        foreach (var e in events)
+        {
+            if (e.TmdbId != tmdbId) continue;
+            if (!string.Equals(e.Username, username, StringComparison.Ordinal)) continue;
+            if (latest == null || e.Timestamp > latest.Timestamp) latest = e;
+        }
+        return latest?.Status;
+    }
+
+    internal static bool WasSuccessfullySynced(IEnumerable<SyncEvent> events, string username, int tmdbId, DateTime viewingDate)
+    {
+        var target = viewingDate.Date;
+        foreach (var e in events)
+        {
+            if (e.TmdbId != tmdbId) continue;
+            if (!string.Equals(e.Username, username, StringComparison.Ordinal)) continue;
+            if (e.Status != SyncStatus.Success && e.Status != SyncStatus.Rewatch) continue;
+            if (e.ViewingDate?.Date == target) return true;
+        }
+        return false;
     }
 
     public static (int Total, int Success, int Failed, int Skipped, int Rewatches) GetStats(string? username = null)

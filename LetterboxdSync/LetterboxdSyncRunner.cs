@@ -163,31 +163,21 @@ public class LetterboxdSyncRunner
 
         if (account.SkipPreviouslySynced)
         {
-            var remaining = new List<(BaseItem Movie, int Priority)>();
-            foreach (var m in movies)
+            var candidates = movies.Select(m =>
             {
-                var tmdbStr = m.GetProviderId(MetadataProvider.Tmdb);
-                if (!int.TryParse(tmdbStr, out var tid))
-                {
-                    remaining.Add((m, 1));
-                    continue;
-                }
-
+                int? tid = int.TryParse(m.GetProviderId(MetadataProvider.Tmdb), out var v) ? v : null;
                 var ud = _userDataManager.GetUserData(user, m);
                 var viewing = ud?.LastPlayedDate?.Date ?? DateTime.Now.Date;
+                return (Item: m, TmdbId: tid, ViewingDate: viewing);
+            });
 
-                if (SyncHistory.WasSuccessfullySynced(user.Username ?? string.Empty, tid, viewing))
-                {
-                    locallySkipped++;
-                    continue;
-                }
-
-                var prevAttempt = SyncHistory.GetLastStatusForFilm(user.Username ?? string.Empty, tid);
-                var priority = (prevAttempt == SyncStatus.Failed || prevAttempt == SyncStatus.Skipped) ? 0 : 1;
-                remaining.Add((m, priority));
-            }
-
-            movies = remaining.OrderBy(x => x.Priority).Select(x => x.Movie).ToList();
+            var (queue, skippedLocally) = BuildSyncQueue(
+                candidates,
+                user.Username ?? string.Empty,
+                SyncHistory.WasSuccessfullySynced,
+                SyncHistory.GetLastStatusForFilm);
+            movies = queue;
+            locallySkipped = skippedLocally;
         }
 
         if (locallySkipped > 0)
@@ -309,5 +299,42 @@ public class LetterboxdSyncRunner
         _logger.LogInformation("Letterboxd sync complete for {Username}: {Synced} synced, {Skipped} skipped (+{LocalSkipped} skipped locally), {Failed} failed",
             user.Username, synced, skipped, locallySkipped, failed);
         SyncProgress.Complete();
+    }
+
+    /// <summary>
+    /// Filter out already-synced candidates and order the rest with previously-failed/skipped first,
+    /// never-attempted next. Items with no TMDb ID stay in the queue at the lowest priority so the
+    /// main loop can record an explicit skip event with reason. Pure function for testability.
+    /// </summary>
+    internal static (List<T> Queue, int LocallySkipped) BuildSyncQueue<T>(
+        IEnumerable<(T Item, int? TmdbId, DateTime ViewingDate)> candidates,
+        string username,
+        Func<string, int, DateTime, bool> wasSynced,
+        Func<string, int, SyncStatus?> lastStatus)
+    {
+        var remaining = new List<(T Item, int Priority)>();
+        int locallySkipped = 0;
+
+        foreach (var c in candidates)
+        {
+            if (c.TmdbId is not int tid)
+            {
+                // No TMDb ID — main loop logs and records an explicit skip event with reason.
+                remaining.Add((c.Item, 1));
+                continue;
+            }
+
+            if (wasSynced(username, tid, c.ViewingDate))
+            {
+                locallySkipped++;
+                continue;
+            }
+
+            var prev = lastStatus(username, tid);
+            var priority = (prev == SyncStatus.Failed || prev == SyncStatus.Skipped) ? 0 : 1;
+            remaining.Add((c.Item, priority));
+        }
+
+        return (remaining.OrderBy(x => x.Priority).Select(x => x.Item).ToList(), locallySkipped);
     }
 }
