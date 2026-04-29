@@ -23,6 +23,10 @@ public class AccountUpdateRequest
     public bool EnableDiaryImport { get; set; }
 
     public bool AutoRequestWatchlist { get; set; }
+
+    public bool SkipPreviouslySynced { get; set; } = true;
+
+    public bool StopOnFailure { get; set; }
 }
 
 public class TestConnectionRequest

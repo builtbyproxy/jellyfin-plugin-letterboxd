@@ -81,6 +81,51 @@ public class SyncTask : IScheduledTask
             if (movies.Count == 0)
                 continue;
 
+            // Filter out anything we already successfully synced for this exact viewing date,
+            // so we don't burn Cloudflare quota re-checking films that are definitely on Letterboxd.
+            // Sort what's left so previously-failed/skipped films come first — if rate limits hit,
+            // we make progress on the backlog instead of repeatedly retrying the same head of queue.
+            int preFilterCount = movies.Count;
+            int locallySkipped = 0;
+
+            if (account.SkipPreviouslySynced)
+            {
+                var remaining = new List<(BaseItem Movie, int Priority)>();
+                foreach (var m in movies)
+                {
+                    var tmdbStr = m.GetProviderId(MetadataProvider.Tmdb);
+                    if (!int.TryParse(tmdbStr, out var tid))
+                    {
+                        // No TMDb ID: handled (and logged) inside the main loop.
+                        remaining.Add((m, 1));
+                        continue;
+                    }
+
+                    var ud = _userDataManager.GetUserData(user, m);
+                    var viewing = ud?.LastPlayedDate?.Date ?? DateTime.Now.Date;
+
+                    if (SyncHistory.WasSuccessfullySynced(user.Username ?? string.Empty, tid, viewing))
+                    {
+                        locallySkipped++;
+                        continue;
+                    }
+
+                    // Priority 0 = previously failed/skipped (retry first), 1 = never attempted.
+                    var prevAttempt = SyncHistory.GetLastStatusForFilm(user.Username ?? string.Empty, tid);
+                    var priority = (prevAttempt == SyncStatus.Failed || prevAttempt == SyncStatus.Skipped) ? 0 : 1;
+                    remaining.Add((m, priority));
+                }
+
+                movies = remaining.OrderBy(x => x.Priority).Select(x => x.Movie).ToList();
+            }
+
+            if (locallySkipped > 0)
+                _logger.LogInformation("Skipping {Count} of {Total} films for {Username}: already in local sync history",
+                    locallySkipped, preFilterCount, user.Username);
+
+            if (movies.Count == 0)
+                continue;
+
             ILetterboxdService service;
             try
             {
@@ -110,7 +155,12 @@ public class SyncTask : IScheduledTask
                 var tmdbIdStr = movie.GetProviderId(MetadataProvider.Tmdb);
                 if (!int.TryParse(tmdbIdStr, out var tmdbId))
                 {
-                    _logger.LogWarning("{Title} has no TMDb ID, skipping", movie.Name);
+                    _logger.LogInformation("Skipping {Title}: no TMDb ID on the Jellyfin item", movie.Name);
+                    SyncHistory.Record(new SyncEvent
+                    {
+                        FilmTitle = movie.Name, Username = user.Username, Timestamp = DateTime.UtcNow,
+                        Status = SyncStatus.Skipped, Error = "No TMDb ID", Source = "scheduled"
+                    });
                     skipped++;
                     continue;
                 }
@@ -126,13 +176,14 @@ public class SyncTask : IScheduledTask
                     var diaryInfo = await service.GetDiaryInfoAsync(film.FilmId, account.LetterboxdUsername).ConfigureAwait(false);
                     if (Helpers.IsDuplicate(diaryInfo.LastDate, viewingDate))
                     {
-                        _logger.LogDebug("{Title} already logged on {Date}, skipping",
-                            movie.Name, viewingDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+                        _logger.LogInformation("Skipping {Title} (TMDb:{TmdbId}): already on Letterboxd diary for {Date}",
+                            movie.Name, tmdbId, viewingDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
                         SyncHistory.Record(new SyncEvent
                         {
                             FilmTitle = movie.Name, FilmSlug = film.Slug, TmdbId = tmdbId,
                             Username = user.Username, Timestamp = DateTime.UtcNow,
-                            ViewingDate = viewingDate, Status = SyncStatus.Skipped, Source = "scheduled"
+                            ViewingDate = viewingDate, Status = SyncStatus.Skipped,
+                            Error = "Already on Letterboxd diary for this date", Source = "scheduled"
                         });
                         skipped++;
                         continue;
@@ -168,11 +219,18 @@ public class SyncTask : IScheduledTask
                         Status = SyncStatus.Failed, Error = ex.Message, Source = "scheduled"
                     });
                     failed++;
+
+                    if (account.StopOnFailure)
+                    {
+                        _logger.LogWarning("Stop-on-failure enabled for {Username}: halting after {Synced} synced, {Skipped} skipped, {Failed} failed",
+                            user.Username, synced, skipped, failed);
+                        break;
+                    }
                 }
             }
 
-            _logger.LogInformation("Letterboxd sync complete for {Username}: {Synced} synced, {Skipped} skipped, {Failed} failed",
-                user.Username, synced, skipped, failed);
+            _logger.LogInformation("Letterboxd sync complete for {Username}: {Synced} synced, {Skipped} skipped (+{LocalSkipped} skipped locally), {Failed} failed",
+                user.Username, synced, skipped, locallySkipped, failed);
             SyncProgress.Complete();
 
             processedUsers++;

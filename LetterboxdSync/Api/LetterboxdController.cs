@@ -99,6 +99,8 @@ public class LetterboxdController : ControllerBase
                 enableWatchlistSync = false,
                 enableDiaryImport = false,
                 autoRequestWatchlist = false,
+                skipPreviouslySynced = true,
+                stopOnFailure = false,
                 isConfigured = false
             });
         }
@@ -116,6 +118,8 @@ public class LetterboxdController : ControllerBase
             enableWatchlistSync = account.EnableWatchlistSync,
             enableDiaryImport = account.EnableDiaryImport,
             autoRequestWatchlist = account.AutoRequestWatchlist,
+            skipPreviouslySynced = account.SkipPreviouslySynced,
+            stopOnFailure = account.StopOnFailure,
             isConfigured = true
         });
     }
@@ -147,6 +151,8 @@ public class LetterboxdController : ControllerBase
         account.EnableWatchlistSync = request.EnableWatchlistSync;
         account.EnableDiaryImport = request.EnableDiaryImport;
         account.AutoRequestWatchlist = request.AutoRequestWatchlist;
+        account.SkipPreviouslySynced = request.SkipPreviouslySynced;
+        account.StopOnFailure = request.StopOnFailure;
 
         Plugin.Instance!.SaveConfiguration();
         _logger.LogInformation("User {UserId} saved their Letterboxd account settings", userId);

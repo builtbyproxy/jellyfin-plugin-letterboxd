@@ -238,6 +238,14 @@
                                 + '<span class="lb-check-title">Import Letterboxd diary as Jellyfin watched</span>'
                                 + '<span class="lb-check-desc">Reverse direction: marks films in your Jellyfin library as played if they are already in your Letterboxd diary. Useful for new Jellyfin users who already have history on Letterboxd.</span>'
                                 + '</span></label>'
+                                + '<label><input type="checkbox" class="skipPreviouslySynced" /><span class="lb-check-text">'
+                                + '<span class="lb-check-title">Skip films already synced locally</span>'
+                                + '<span class="lb-check-desc">Use the plugin\'s own sync history to short-circuit the duplicate check, so we don\'t hit Letterboxd at all for films we already logged. Massively reduces Cloudflare blocks on large libraries. Recommended.</span>'
+                                + '</span></label>'
+                                + '<label><input type="checkbox" class="stopOnFailure" /><span class="lb-check-text">'
+                                + '<span class="lb-check-title">Stop sync immediately on first failure</span>'
+                                + '<span class="lb-check-desc">Halt this user\'s sync the moment a film fails (e.g. Cloudflare 403 or anti-flooding). Prevents wasted retries that further inflame Letterboxd\'s rate limits. Remaining films will be picked up next run, prioritising failed and never-attempted entries first.</span>'
+                                + '</span></label>'
                                 + '</div>'
                                 + '<div class="dateFilterDaysContainer" style="display:none;margin-top:0.5em;">'
                                 + '<label class="lb-field">Days to look back</label>'
@@ -262,9 +270,12 @@
                                 entry.querySelector('.enableWatchlistSync').checked = account.EnableWatchlistSync === true;
                                 entry.querySelector('.autoRequestWatchlist').checked = account.AutoRequestWatchlist === true;
                                 entry.querySelector('.enableDiaryImport').checked = account.EnableDiaryImport === true;
+                                entry.querySelector('.skipPreviouslySynced').checked = account.SkipPreviouslySynced !== false;
+                                entry.querySelector('.stopOnFailure').checked = account.StopOnFailure === true;
                                 if (account.EnableDateFilter) entry.querySelector('.dateFilterDaysContainer').style.display = '';
                             } else {
                                 entry.querySelector('.accountEnabled').checked = true;
+                                entry.querySelector('.skipPreviouslySynced').checked = true;
                             }
                             entry.querySelector('.enableDateFilter').addEventListener('change', function () {
                                 entry.querySelector('.dateFilterDaysContainer').style.display = this.checked ? '' : 'none';
@@ -287,7 +298,9 @@
                                     DateFilterDays: parseInt(entry.querySelector('.dateFilterDays').value, 10) || 7,
                                     EnableWatchlistSync: entry.querySelector('.enableWatchlistSync').checked,
                                     AutoRequestWatchlist: entry.querySelector('.autoRequestWatchlist').checked,
-                                    EnableDiaryImport: entry.querySelector('.enableDiaryImport').checked
+                                    EnableDiaryImport: entry.querySelector('.enableDiaryImport').checked,
+                                    SkipPreviouslySynced: entry.querySelector('.skipPreviouslySynced').checked,
+                                    StopOnFailure: entry.querySelector('.stopOnFailure').checked
                                 });
                             });
                             return accounts;
