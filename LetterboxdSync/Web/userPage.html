@@ -87,7 +87,7 @@
 
                 <!-- DASHBOARD TAB -->
                 <div id="tab-stats" class="lb-tab-content">
-                    <div id="adminSyncControls" style="display:none;">
+                    <div id="syncControls">
                         <div style="display:flex;align-items:center;gap:1em;margin-bottom:0.5em;">
                             <button type="button" class="lb-btn lb-btn-primary" id="runSyncBtn">Run Sync Now</button>
                             <span id="syncStatus" class="c-muted" style="font-size:0.9em;"></span>
@@ -173,6 +173,14 @@
                             <label><input type="checkbox" id="enableDiaryImport" /><span class="lb-check-text">
                                 <span class="lb-check-title">Import Letterboxd diary as Jellyfin watched</span>
                                 <span class="lb-check-desc">Reverse direction: marks films in your Jellyfin library as played if they are already in your Letterboxd diary.</span>
+                            </span></label>
+                            <label><input type="checkbox" id="skipPreviouslySynced" /><span class="lb-check-text">
+                                <span class="lb-check-title">Skip films already synced locally</span>
+                                <span class="lb-check-desc">Use the plugin's own sync history to short-circuit the duplicate check, so we don't hit Letterboxd at all for films we already logged. Massively reduces Cloudflare blocks on large libraries. Recommended.</span>
+                            </span></label>
+                            <label><input type="checkbox" id="stopOnFailure" /><span class="lb-check-text">
+                                <span class="lb-check-title">Stop sync immediately on first failure</span>
+                                <span class="lb-check-desc">Halt your sync the moment a film fails (e.g. Cloudflare 403 or anti-flooding). Prevents wasted retries that further inflame Letterboxd's rate limits. Remaining films will be picked up next run, prioritising failed and never-attempted entries first.</span>
                             </span></label>
                         </div>
                         <div id="dateFilterDaysContainer" style="display:none;margin-top:0.5em;">
@@ -315,6 +323,8 @@
                                 document.getElementById('enableWatchlistSync').checked = a.enableWatchlistSync === true;
                                 document.getElementById('autoRequestWatchlist').checked = a.autoRequestWatchlist === true;
                                 document.getElementById('enableDiaryImport').checked = a.enableDiaryImport === true;
+                                document.getElementById('skipPreviouslySynced').checked = a.skipPreviouslySynced !== false;
+                                document.getElementById('stopOnFailure').checked = a.stopOnFailure === true;
                                 document.getElementById('dateFilterDaysContainer').style.display = a.enableDateFilter ? '' : 'none';
                             })
                             .catch(function (err) {
@@ -340,7 +350,9 @@
                                 dateFilterDays: parseInt(document.getElementById('dateFilterDays').value, 10) || 7,
                                 enableWatchlistSync: document.getElementById('enableWatchlistSync').checked,
                                 autoRequestWatchlist: document.getElementById('autoRequestWatchlist').checked,
-                                enableDiaryImport: document.getElementById('enableDiaryImport').checked
+                                enableDiaryImport: document.getElementById('enableDiaryImport').checked,
+                                skipPreviouslySynced: document.getElementById('skipPreviouslySynced').checked,
+                                stopOnFailure: document.getElementById('stopOnFailure').checked
                             };
 
                             self.apiPut('Jellyfin.Plugin.LetterboxdSync/Account', data)
@@ -452,14 +464,14 @@
                             }).catch(function () {});
                         },
 
-                        pollTask: function (taskId) {
+                        pollProgress: function () {
                             var self = this;
                             if (self.syncPoll) clearInterval(self.syncPoll);
                             self.syncPoll = setInterval(function () {
-                                self.apiFetch('ScheduledTasks/' + taskId)
+                                self.apiFetch('Jellyfin.Plugin.LetterboxdSync/Progress')
                                 .then(function (r) { return r.json(); })
-                                .then(function (t) {
-                                    if (t.State === 'Idle') {
+                                .then(function (p) {
+                                    if (!p || !p.isRunning) {
                                         clearInterval(self.syncPoll);
                                         self.syncPoll = null;
                                         document.getElementById('runSyncBtn').disabled = false;
@@ -467,12 +479,8 @@
                                         document.getElementById('syncProgressBar').style.display = 'none';
                                         self.loadStats();
                                         self.loadHistory();
+                                        return;
                                     }
-                                });
-                                self.apiFetch('Jellyfin.Plugin.LetterboxdSync/Progress')
-                                .then(function (r) { return r.json(); })
-                                .then(function (p) {
-                                    if (!p || !p.isRunning) return;
                                     document.getElementById('syncProgressBar').style.display = 'block';
                                     var detail = '';
                                     if (p.totalItems > 0) {
@@ -499,22 +507,24 @@
                             btn.disabled = true;
                             document.getElementById('syncStatus').textContent = 'Starting...';
 
-                            self.apiFetch('ScheduledTasks')
-                            .then(function (r) { return r.json(); })
-                            .then(function (tasks) {
-                                var task = tasks.find(function (t) { return t.Key === 'LetterboxdSync'; });
-                                if (!task) {
-                                    document.getElementById('syncStatus').innerHTML = '<span class="c-red">Task not found</span>';
-                                    btn.disabled = false;
+                            self.apiPost('Jellyfin.Plugin.LetterboxdSync/Sync', {})
+                            .then(function (r) {
+                                if (r.status === 409) {
+                                    document.getElementById('syncStatus').innerHTML = '<span class="c-blue">Sync already running, polling...</span>';
+                                    self.pollProgress();
                                     return;
                                 }
-                                fetch(self.serverUrl + '/ScheduledTasks/Running/' + task.Id, {
-                                    method: 'POST',
-                                    headers: { 'Authorization': 'MediaBrowser Token="' + self.token + '"' }
-                                }).then(function () {
-                                    document.getElementById('syncStatus').innerHTML = '<span class="c-green">Syncing...</span>';
-                                    self.pollTask(task.Id);
-                                });
+                                if (!r.ok) {
+                                    return r.json().then(function (data) {
+                                        document.getElementById('syncStatus').innerHTML = '<span class="c-red">' + (data.error || 'Failed to start sync') + '</span>';
+                                        btn.disabled = false;
+                                    });
+                                }
+                                document.getElementById('syncStatus').innerHTML = '<span class="c-green">Syncing...</span>';
+                                self.pollProgress();
+                            }).catch(function (err) {
+                                document.getElementById('syncStatus').innerHTML = '<span class="c-red">Error: ' + err.message + '</span>';
+                                btn.disabled = false;
                             });
                         },
 
@@ -584,29 +594,24 @@
                             var self = this;
                             self.initTabs();
 
-                            // Check if current user is admin
+                            // Show admin-only links to admins; sync controls are available to all users
                             self.apiFetch('Users/Me')
                             .then(function (r) { return r.json(); })
                             .then(function (user) {
                                 if (user.Policy && user.Policy.IsAdministrator) {
                                     self.isAdmin = true;
                                     document.getElementById('adminLink').style.display = '';
-                                    document.getElementById('adminSyncControls').style.display = '';
+                                }
+                            }).catch(function () {});
 
-                                    // Check if sync is already running
-                                    self.apiFetch('ScheduledTasks')
-                                    .then(function (r) { return r.json(); })
-                                    .then(function (tasks) {
-                                        var syncTask = tasks.find(function (t) { return t.Key === 'LetterboxdSync'; });
-                                        var diaryTask = tasks.find(function (t) { return t.Key === 'LetterboxdDiaryImport'; });
-                                        var running = (syncTask && syncTask.State === 'Running') ? syncTask :
-                                                      (diaryTask && diaryTask.State === 'Running') ? diaryTask : null;
-                                        if (running) {
-                                            document.getElementById('runSyncBtn').disabled = true;
-                                            document.getElementById('syncStatus').innerHTML = '<span class="c-green">Sync in progress...</span>';
-                                            self.pollTask(running.Id);
-                                        }
-                                    }).catch(function () {});
+                            // If a sync is already running (started by anyone), pick up polling
+                            self.apiFetch('Jellyfin.Plugin.LetterboxdSync/Progress')
+                            .then(function (r) { return r.json(); })
+                            .then(function (p) {
+                                if (p && p.isRunning) {
+                                    document.getElementById('runSyncBtn').disabled = true;
+                                    document.getElementById('syncStatus').innerHTML = '<span class="c-green">Sync in progress...</span>';
+                                    self.pollProgress();
                                 }
                             }).catch(function () {});
 

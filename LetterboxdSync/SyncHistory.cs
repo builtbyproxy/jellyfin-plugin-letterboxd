@@ -33,7 +33,6 @@ public static class SyncHistory
 {
     private static readonly object _lock = new();
     private static List<SyncEvent>? _events;
-    private const int MaxEvents = 500;
     private static ILogger? _logger;
 
     public static void SetLogger(ILogger logger) => _logger = logger;
@@ -129,14 +128,6 @@ public static class SyncHistory
             var events = LoadEvents();
             events.Add(evt);
 
-            // Trim oldest events if over the cap
-            bool trimmed = events.Count > MaxEvents;
-            if (trimmed)
-            {
-                events.Sort((a, b) => b.Timestamp.CompareTo(a.Timestamp));
-                events.RemoveRange(MaxEvents, events.Count - MaxEvents);
-            }
-
             try
             {
                 var path = DataPath;
@@ -144,15 +135,7 @@ public static class SyncHistory
                 if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
                     Directory.CreateDirectory(dir);
 
-                if (trimmed)
-                {
-                    // Full rewrite only when events were actually trimmed
-                    SaveAllEvents();
-                }
-                else
-                {
-                    File.AppendAllText(path, JsonSerializer.Serialize(evt) + Environment.NewLine);
-                }
+                File.AppendAllText(path, JsonSerializer.Serialize(evt) + Environment.NewLine);
             }
             catch (Exception ex)
             {
@@ -173,6 +156,58 @@ public static class SyncHistory
 
             return filtered.OrderByDescending(e => e.Timestamp).Take(count).ToList();
         }
+    }
+
+    /// <summary>
+    /// Most recent status recorded for this user/film, or null if there's no history.
+    /// Used to prioritise previously-failed films at the head of the sync queue.
+    /// </summary>
+    public static SyncStatus? GetLastStatusForFilm(string username, int tmdbId)
+    {
+        lock (_lock)
+        {
+            return GetLastStatusForFilm(LoadEvents(), username, tmdbId);
+        }
+    }
+
+    /// <summary>
+    /// True if we have a Success or Rewatch entry for this user/film combo whose ViewingDate
+    /// matches the current viewing date. Used to short-circuit the duplicate check without
+    /// making an HTTP call to Letterboxd.
+    /// </summary>
+    public static bool WasSuccessfullySynced(string username, int tmdbId, DateTime viewingDate)
+    {
+        lock (_lock)
+        {
+            return WasSuccessfullySynced(LoadEvents(), username, tmdbId, viewingDate);
+        }
+    }
+
+    // Pure overloads, exposed for unit testing without touching the on-disk store.
+
+    internal static SyncStatus? GetLastStatusForFilm(IEnumerable<SyncEvent> events, string username, int tmdbId)
+    {
+        SyncEvent? latest = null;
+        foreach (var e in events)
+        {
+            if (e.TmdbId != tmdbId) continue;
+            if (!string.Equals(e.Username, username, StringComparison.Ordinal)) continue;
+            if (latest == null || e.Timestamp > latest.Timestamp) latest = e;
+        }
+        return latest?.Status;
+    }
+
+    internal static bool WasSuccessfullySynced(IEnumerable<SyncEvent> events, string username, int tmdbId, DateTime viewingDate)
+    {
+        var target = viewingDate.Date;
+        foreach (var e in events)
+        {
+            if (e.TmdbId != tmdbId) continue;
+            if (!string.Equals(e.Username, username, StringComparison.Ordinal)) continue;
+            if (e.Status != SyncStatus.Success && e.Status != SyncStatus.Rewatch) continue;
+            if (e.ViewingDate?.Date == target) return true;
+        }
+        return false;
     }
 
     public static (int Total, int Success, int Failed, int Skipped, int Rewatches) GetStats(string? username = null)

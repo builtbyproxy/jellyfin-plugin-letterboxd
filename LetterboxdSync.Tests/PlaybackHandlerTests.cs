@@ -21,9 +21,20 @@ public class ServiceRegistratorTests
 
         registrator.RegisterServices(services, null!);
 
-        var descriptor = Assert.Single(services);
-        Assert.Equal(typeof(Microsoft.Extensions.Hosting.IHostedService), descriptor.ServiceType);
-        Assert.Equal(typeof(PlaybackHandler), descriptor.ImplementationType);
+        var hostedService = Assert.Single(services, d => d.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService));
+        Assert.Equal(typeof(PlaybackHandler), hostedService.ImplementationType);
+    }
+
+    [Fact]
+    public void RegisterServices_AddsSyncRunnerAsSingleton()
+    {
+        var services = new ServiceCollection();
+        var registrator = new ServiceRegistrator();
+
+        registrator.RegisterServices(services, null!);
+
+        var runner = Assert.Single(services, d => d.ServiceType == typeof(LetterboxdSyncRunner));
+        Assert.Equal(ServiceLifetime.Singleton, runner.Lifetime);
     }
 }
 
