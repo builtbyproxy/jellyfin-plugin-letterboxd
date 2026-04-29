@@ -46,7 +46,8 @@ const featureGroups: FeatureGroup[] = [
     intro: 'Multi-user, resilient, and transparent about what it did.',
     visual: 'dashboard',
     items: [
-      { title: 'Multi-user', body: 'Each Jellyfin user links their own Letterboxd account.', icon: 'users' },
+      { title: 'Multi-user', body: 'Each Jellyfin user links their own Letterboxd account, with a per-user dashboard and Run Sync Now button. No admin access needed.', icon: 'users' },
+      { title: 'Smart catch-up', body: 'Already-synced films short-circuit locally with no Letterboxd hit. Previously-failed items retry first when rate limits ease.', icon: 'bolt' },
       { title: 'Cloudflare resilient', body: 'Official API first, scraping fallback, automatic retry.', icon: 'cloud' },
       { title: 'Self-healing auth', body: 'Stale cookies trigger an automatic re-login and retry.', icon: 'refresh' },
     ],
