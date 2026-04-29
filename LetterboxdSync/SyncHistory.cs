@@ -33,7 +33,7 @@ public static class SyncHistory
 {
     private static readonly object _lock = new();
     private static List<SyncEvent>? _events;
-    private const int MaxEvents = 500;
+    private const int MaxEvents = 5000;
     private static ILogger? _logger;
 
     public static void SetLogger(ILogger logger) => _logger = logger;
@@ -172,6 +172,48 @@ public static class SyncHistory
                 filtered = filtered.Where(e => e.Username == username);
 
             return filtered.OrderByDescending(e => e.Timestamp).Take(count).ToList();
+        }
+    }
+
+    /// <summary>
+    /// Most recent status recorded for this user/film, or null if there's no history.
+    /// Used to prioritise previously-failed films at the head of the sync queue.
+    /// </summary>
+    public static SyncStatus? GetLastStatusForFilm(string username, int tmdbId)
+    {
+        lock (_lock)
+        {
+            var events = LoadEvents();
+            SyncEvent? latest = null;
+            foreach (var e in events)
+            {
+                if (e.TmdbId != tmdbId) continue;
+                if (!string.Equals(e.Username, username, StringComparison.Ordinal)) continue;
+                if (latest == null || e.Timestamp > latest.Timestamp) latest = e;
+            }
+            return latest?.Status;
+        }
+    }
+
+    /// <summary>
+    /// True if we have a Success or Rewatch entry for this user/film combo whose ViewingDate
+    /// matches the current viewing date. Used to short-circuit the duplicate check without
+    /// making an HTTP call to Letterboxd.
+    /// </summary>
+    public static bool WasSuccessfullySynced(string username, int tmdbId, DateTime viewingDate)
+    {
+        lock (_lock)
+        {
+            var events = LoadEvents();
+            var target = viewingDate.Date;
+            foreach (var e in events)
+            {
+                if (e.TmdbId != tmdbId) continue;
+                if (!string.Equals(e.Username, username, StringComparison.Ordinal)) continue;
+                if (e.Status != SyncStatus.Success && e.Status != SyncStatus.Rewatch) continue;
+                if (e.ViewingDate?.Date == target) return true;
+            }
+            return false;
         }
     }
 
