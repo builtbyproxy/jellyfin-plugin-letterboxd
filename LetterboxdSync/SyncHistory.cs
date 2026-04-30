@@ -159,6 +159,32 @@ public static class SyncHistory
     }
 
     /// <summary>
+    /// Page through history newest-first. Returns the slice plus the total count for the
+    /// caller's paginator. Username, when supplied, restricts both the slice and the total
+    /// to that user's events.
+    /// </summary>
+    public static (List<SyncEvent> Events, int Total) GetPage(int offset, int count, string? username = null)
+    {
+        lock (_lock)
+        {
+            return GetPage(LoadEvents(), offset, count, username);
+        }
+    }
+
+    internal static (List<SyncEvent> Events, int Total) GetPage(IEnumerable<SyncEvent> events, int offset, int count, string? username = null)
+    {
+        IEnumerable<SyncEvent> filtered = events;
+        if (!string.IsNullOrEmpty(username))
+            filtered = filtered.Where(e => e.Username == username);
+
+        var ordered = filtered.OrderByDescending(e => e.Timestamp).ToList();
+        var safeOffset = Math.Max(0, offset);
+        var safeCount = Math.Max(0, count);
+        var slice = ordered.Skip(safeOffset).Take(safeCount).ToList();
+        return (slice, ordered.Count);
+    }
+
+    /// <summary>
     /// Most recent status recorded for this user/film, or null if there's no history.
     /// Used to prioritise previously-failed films at the head of the sync queue.
     /// </summary>
@@ -208,6 +234,34 @@ public static class SyncHistory
             if (e.ViewingDate?.Date == target) return true;
         }
         return false;
+    }
+
+    /// <summary>
+    /// ViewingDate of the most recent Success or Rewatch entry for this user/film, or null
+    /// if there isn't one. Used as a local-history backstop against duplicates that can
+    /// otherwise be created when Letterboxd's own duplicate-check call fails (Cloudflare
+    /// 403 returns null lastDate, which the original IsDuplicate check then treats as
+    /// "not a duplicate").
+    /// </summary>
+    public static DateTime? GetLastSuccessfulSyncDate(string username, int tmdbId)
+    {
+        lock (_lock)
+        {
+            return GetLastSuccessfulSyncDate(LoadEvents(), username, tmdbId);
+        }
+    }
+
+    internal static DateTime? GetLastSuccessfulSyncDate(IEnumerable<SyncEvent> events, string username, int tmdbId)
+    {
+        SyncEvent? latest = null;
+        foreach (var e in events)
+        {
+            if (e.TmdbId != tmdbId) continue;
+            if (!string.Equals(e.Username, username, StringComparison.Ordinal)) continue;
+            if (e.Status != SyncStatus.Success && e.Status != SyncStatus.Rewatch) continue;
+            if (latest == null || e.Timestamp > latest.Timestamp) latest = e;
+        }
+        return latest?.ViewingDate;
     }
 
     public static (int Total, int Success, int Failed, int Skipped, int Rewatches) GetStats(string? username = null)

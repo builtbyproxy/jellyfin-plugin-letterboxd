@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.9.1.0",
+        "changelog": "Local-history duplicate backstop: refuse to MarkAsWatched when sync history shows a recent successful sync that does not pass the rewatch threshold, fixes the Cloudflare-failed-validator path that was creating real Letterboxd diary duplicates. Paginated dashboard history table (100 per page) now that the 500-entry cap is gone. Addresses #21.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/releases/download/v1.9.1/jellyfin-plugin-letterboxd-v1.9.1.zip",
+        "checksum": "PLACEHOLDER",
+        "timestamp": "2026-04-30T00:00:00Z"
+      },
+      {
         "version": "1.9.0.0",
         "changelog": "Skip already-synced films using local sync history so we don't burn Cloudflare quota on duplicate checks; prioritise previously-failed/skipped films first; per-account stop-on-failure toggle to halt the moment Letterboxd anti-flooding triggers; explicit info-level logging for every skip with reason; non-admin users can now Run Sync Now (triggers their account only). Fixes #20.",
         "targetAbi": "10.11.0.0",

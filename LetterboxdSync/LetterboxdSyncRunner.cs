@@ -255,6 +255,30 @@ public class LetterboxdSyncRunner
                     continue;
                 }
 
+                // Local-history backstop. The Letterboxd-side IsDuplicate check above silently
+                // returns false when GetDiaryInfo fails (e.g. Cloudflare 403 -> null lastDate),
+                // which used to let MarkAsWatched create a duplicate entry. Cross-check our own
+                // append-only log: if we have a recent successful sync that is not far enough
+                // back to count as a real rewatch, refuse rather than risk a duplicate.
+                var localLastSync = SyncHistory.GetLastSuccessfulSyncDate(user.Username ?? string.Empty, tmdbId);
+                if (localLastSync.HasValue && !Helpers.IsRewatch(localLastSync, viewingDate))
+                {
+                    var lastSyncStr = localLastSync.Value.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                    _logger.LogInformation("Skipping {Title} (TMDb:{TmdbId}): local history shows prior sync on {Date}, suppressing potential duplicate",
+                        movie.Name, tmdbId, lastSyncStr);
+                    SyncHistory.Record(new SyncEvent
+                    {
+                        FilmTitle = movie.Name, FilmSlug = film.Slug, TmdbId = tmdbId,
+                        Username = user.Username ?? string.Empty, Timestamp = DateTime.UtcNow,
+                        ViewingDate = viewingDate, Status = SyncStatus.Skipped,
+                        Error = $"Local history shows prior sync on {lastSyncStr}, suppressing potential duplicate",
+                        Source = source
+                    });
+                    skipped++;
+                    SyncProgress.IncrementProcessed();
+                    continue;
+                }
+
                 bool isRewatch = false;
                 bool liked = account.SyncFavorites && (userData?.IsFavorite ?? false);
                 double? lbRating = Helpers.MapRating(userData?.Rating);

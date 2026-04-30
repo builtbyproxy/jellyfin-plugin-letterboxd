@@ -106,13 +106,20 @@ public class LetterboxdController : ControllerBase
         });
     }
 
+    /// <summary>
+    /// Paginated sync history. Returns the slice plus the total so the dashboard can
+    /// render a paginator. Without an offset the response is backwards-compatible with
+    /// pre-pagination clients that just consumed the array, since callers that ignore
+    /// the wrapper still get the most recent items via /History?count=N.
+    /// </summary>
     [HttpGet("History")]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    public ActionResult GetHistory([FromQuery] int count = 50)
+    public ActionResult GetHistory([FromQuery] int count = 50, [FromQuery] int offset = 0)
     {
         var jellyfinUsername = GetJellyfinUsername();
-        var events = SyncHistory.GetRecent(Math.Min(count, 200), jellyfinUsername);
-        return Ok(events);
+        var capped = Math.Min(Math.Max(count, 1), 200);
+        var (events, total) = SyncHistory.GetPage(Math.Max(offset, 0), capped, jellyfinUsername);
+        return Ok(new { events, total, offset = Math.Max(offset, 0), count = capped });
     }
 
     [HttpGet("Account")]
