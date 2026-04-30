@@ -12,10 +12,10 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '9.0.x'
 
@@ -34,7 +34,7 @@ jobs:
           zip -j /tmp/jellyfin-plugin-letterboxd-${{ github.ref_name }}.zip LetterboxdSync.dll HtmlAgilityPack.dll
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: /tmp/jellyfin-plugin-letterboxd-${{ github.ref_name }}.zip
           generate_release_notes: true
