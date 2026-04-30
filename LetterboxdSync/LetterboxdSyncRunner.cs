@@ -27,8 +27,6 @@ public class LetterboxdSyncRunner
     private readonly IUserManager _userManager;
     private readonly IUserDataManager _userDataManager;
 
-    private static readonly SemaphoreSlim _gate = new(1, 1);
-
     public LetterboxdSyncRunner(
         ILoggerFactory loggerFactory,
         ILibraryManager libraryManager,
@@ -42,13 +40,13 @@ public class LetterboxdSyncRunner
         _userDataManager = userDataManager;
     }
 
-    public static bool IsRunning => _gate.CurrentCount == 0;
+    public static bool IsRunning => SyncGate.IsRunning;
 
     private static PluginConfiguration Config => Plugin.Instance!.Configuration;
 
     public async Task RunForAllAsync(IProgress<double> progress, string source, CancellationToken cancellationToken)
     {
-        if (!await _gate.WaitAsync(0, cancellationToken).ConfigureAwait(false))
+        if (!await SyncGate.Instance.WaitAsync(0, cancellationToken).ConfigureAwait(false))
         {
             _logger.LogWarning("Sync already running, skipping scheduled run");
             return;
@@ -77,7 +75,7 @@ public class LetterboxdSyncRunner
         }
         finally
         {
-            _gate.Release();
+            SyncGate.Instance.Release();
         }
     }
 
@@ -87,7 +85,7 @@ public class LetterboxdSyncRunner
     /// </summary>
     public async Task<bool> TryRunForUserAsync(string userJellyfinId, string source, IProgress<double> progress, CancellationToken cancellationToken)
     {
-        if (!await _gate.WaitAsync(0, cancellationToken).ConfigureAwait(false))
+        if (!await SyncGate.Instance.WaitAsync(0, cancellationToken).ConfigureAwait(false))
         {
             _logger.LogWarning("Sync already running, refusing user-triggered start for {UserId}", userJellyfinId);
             return false;
@@ -116,7 +114,7 @@ public class LetterboxdSyncRunner
         }
         finally
         {
-            _gate.Release();
+            SyncGate.Instance.Release();
         }
     }
 

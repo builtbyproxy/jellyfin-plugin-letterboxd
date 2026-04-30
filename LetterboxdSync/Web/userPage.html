@@ -88,8 +88,9 @@
                 <!-- DASHBOARD TAB -->
                 <div id="tab-stats" class="lb-tab-content">
                     <div id="syncControls">
-                        <div style="display:flex;align-items:center;gap:1em;margin-bottom:0.5em;">
+                        <div style="display:flex;align-items:center;gap:1em;margin-bottom:0.5em;flex-wrap:wrap;">
                             <button type="button" class="lb-btn lb-btn-primary" id="runSyncBtn">Run Sync Now</button>
+                            <button type="button" class="lb-btn lb-btn-secondary" id="runWatchlistSyncBtn" title="Pull your Letterboxd watchlist into the Jellyfin playlist (and Jellyseerr if configured)">Sync Watchlist Now</button>
                             <span id="syncStatus" class="c-muted" style="font-size:0.9em;"></span>
                         </div>
                         <div id="syncProgressBar" style="display:none;margin-bottom:1.5em;">
@@ -503,6 +504,12 @@
                             this.loadHistory(false);
                         },
 
+                        setSyncButtons: function (disabled) {
+                            document.getElementById('runSyncBtn').disabled = disabled;
+                            var wl = document.getElementById('runWatchlistSyncBtn');
+                            if (wl) wl.disabled = disabled;
+                        },
+
                         pollProgress: function () {
                             var self = this;
                             if (self.syncPoll) clearInterval(self.syncPoll);
@@ -513,7 +520,7 @@
                                     if (!p || !p.isRunning) {
                                         clearInterval(self.syncPoll);
                                         self.syncPoll = null;
-                                        document.getElementById('runSyncBtn').disabled = false;
+                                        self.setSyncButtons(false);
                                         document.getElementById('syncStatus').innerHTML = '<span class="c-green">Done!</span>';
                                         document.getElementById('syncProgressBar').style.display = 'none';
                                         self.loadStats();
@@ -542,8 +549,7 @@
 
                         runSync: function () {
                             var self = this;
-                            var btn = document.getElementById('runSyncBtn');
-                            btn.disabled = true;
+                            self.setSyncButtons(true);
                             document.getElementById('syncStatus').textContent = 'Starting...';
 
                             self.apiPost('Jellyfin.Plugin.LetterboxdSync/Sync', {})
@@ -556,14 +562,40 @@
                                 if (!r.ok) {
                                     return r.json().then(function (data) {
                                         document.getElementById('syncStatus').innerHTML = '<span class="c-red">' + (data.error || 'Failed to start sync') + '</span>';
-                                        btn.disabled = false;
+                                        self.setSyncButtons(false);
                                     });
                                 }
                                 document.getElementById('syncStatus').innerHTML = '<span class="c-green">Syncing...</span>';
                                 self.pollProgress();
                             }).catch(function (err) {
                                 document.getElementById('syncStatus').innerHTML = '<span class="c-red">Error: ' + err.message + '</span>';
-                                btn.disabled = false;
+                                self.setSyncButtons(false);
+                            });
+                        },
+
+                        runWatchlistSync: function () {
+                            var self = this;
+                            self.setSyncButtons(true);
+                            document.getElementById('syncStatus').textContent = 'Starting watchlist sync...';
+
+                            self.apiPost('Jellyfin.Plugin.LetterboxdSync/SyncWatchlist', {})
+                            .then(function (r) {
+                                if (r.status === 409) {
+                                    document.getElementById('syncStatus').innerHTML = '<span class="c-blue">Sync already running, polling...</span>';
+                                    self.pollProgress();
+                                    return;
+                                }
+                                if (!r.ok) {
+                                    return r.json().then(function (data) {
+                                        document.getElementById('syncStatus').innerHTML = '<span class="c-red">' + (data.error || 'Failed to start watchlist sync') + '</span>';
+                                        self.setSyncButtons(false);
+                                    });
+                                }
+                                document.getElementById('syncStatus').innerHTML = '<span class="c-green">Syncing watchlist...</span>';
+                                self.pollProgress();
+                            }).catch(function (err) {
+                                document.getElementById('syncStatus').innerHTML = '<span class="c-red">Error: ' + err.message + '</span>';
+                                self.setSyncButtons(false);
                             });
                         },
 
@@ -648,7 +680,7 @@
                             .then(function (r) { return r.json(); })
                             .then(function (p) {
                                 if (p && p.isRunning) {
-                                    document.getElementById('runSyncBtn').disabled = true;
+                                    self.setSyncButtons(true);
                                     document.getElementById('syncStatus').innerHTML = '<span class="c-green">Sync in progress...</span>';
                                     self.pollProgress();
                                 }
@@ -663,6 +695,7 @@
                             document.getElementById('saveBtn').addEventListener('click', function () { self.saveAccount(); });
                             document.getElementById('testBtn').addEventListener('click', function () { self.testConnection(); });
                             document.getElementById('runSyncBtn').addEventListener('click', function () { self.runSync(); });
+                            document.getElementById('runWatchlistSyncBtn').addEventListener('click', function () { self.runWatchlistSync(); });
                             document.getElementById('historyFirst').addEventListener('click', function () { self.gotoHistoryPage(1); });
                             document.getElementById('historyPrev').addEventListener('click', function () { self.gotoHistoryPage(Math.floor(self.historyOffset / self.historyPageSize)); });
                             document.getElementById('historyNext').addEventListener('click', function () { self.gotoHistoryPage(Math.floor(self.historyOffset / self.historyPageSize) + 2); });

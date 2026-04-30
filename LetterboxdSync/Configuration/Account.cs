@@ -28,6 +28,8 @@ public class Account
 
     public bool AutoRequestWatchlist { get; set; }
 
+    public bool MirrorJellyseerrWatchlist { get; set; }
+
     public bool SkipPreviouslySynced { get; set; } = true;
 
     public bool StopOnFailure { get; set; }
