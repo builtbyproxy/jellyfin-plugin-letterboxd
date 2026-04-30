@@ -9,6 +9,7 @@ public class ServiceRegistrator : IPluginServiceRegistrator
     public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
     {
         serviceCollection.AddSingleton<LetterboxdSyncRunner>();
+        serviceCollection.AddSingleton<WatchlistSyncRunner>();
         serviceCollection.AddHostedService<PlaybackHandler>();
     }
 }

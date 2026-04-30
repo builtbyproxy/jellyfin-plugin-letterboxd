@@ -74,8 +74,9 @@
 
                 <!-- DASHBOARD TAB -->
                 <div id="tab-stats" class="lb-tab-content">
-                    <div style="display:flex;align-items:center;gap:1em;margin-bottom:0.5em;">
+                    <div style="display:flex;align-items:center;gap:1em;margin-bottom:0.5em;flex-wrap:wrap;">
                         <button type="button" class="lb-btn lb-btn-primary" id="runSyncBtn">Run Sync Now</button>
+                        <button type="button" class="lb-btn lb-btn-secondary" id="runWatchlistSyncBtn" title="Pull your Letterboxd watchlist into the Jellyfin playlist (and Jellyseerr if configured)">Sync Watchlist Now</button>
                         <span id="syncStatus" class="c-muted" style="font-size:0.9em;"></span>
                     </div>
                     <div id="syncProgressBar" style="display:none;margin-bottom:1.5em;">
@@ -242,7 +243,11 @@
                                 + '</span></label>'
                                 + '<label><input type="checkbox" class="autoRequestWatchlist" /><span class="lb-check-text">'
                                 + '<span class="lb-check-title">Auto-request unmatched watchlist films via Jellyseerr</span>'
-                                + '<span class="lb-check-desc">When a watchlisted film is not in the Jellyfin library, submit a request to Jellyseerr (configure URL + API key above). Requests are attributed to this user\'s Jellyseerr account (matched by Jellyfin User ID). Requires Jellyseerr to be configured.</span>'
+                                + '<span class="lb-check-desc">When a watchlisted film is not in the Jellyfin library, submit a request to Jellyseerr (configure URL + API key above). Requests are attributed to this user\'s Jellyseerr account (matched by Jellyfin User ID). Requires Jellyseerr to be configured. Skips titles Jellyseerr already has pending, processing, or available, so re-runs no longer create duplicates.</span>'
+                                + '</span></label>'
+                                + '<label><input type="checkbox" class="mirrorJellyseerrWatchlist" /><span class="lb-check-text">'
+                                + '<span class="lb-check-title">Mirror Letterboxd watchlist into Jellyseerr watchlist</span>'
+                                + '<span class="lb-check-desc">Two-way mirror against your Jellyseerr user\'s own watchlist (the one shown in the Jellyseerr UI). Adds films you\'ve added on Letterboxd, removes films you\'ve taken off. Only touches movies, so manually-added Jellyseerr TV entries are left alone. Requires Jellyseerr to be configured.</span>'
                                 + '</span></label>'
                                 + '<label><input type="checkbox" class="enableDiaryImport" /><span class="lb-check-text">'
                                 + '<span class="lb-check-title">Import Letterboxd diary as Jellyfin watched</span>'
@@ -279,6 +284,7 @@
                                 entry.querySelector('.dateFilterDays').value = account.DateFilterDays || 7;
                                 entry.querySelector('.enableWatchlistSync').checked = account.EnableWatchlistSync === true;
                                 entry.querySelector('.autoRequestWatchlist').checked = account.AutoRequestWatchlist === true;
+                                entry.querySelector('.mirrorJellyseerrWatchlist').checked = account.MirrorJellyseerrWatchlist === true;
                                 entry.querySelector('.enableDiaryImport').checked = account.EnableDiaryImport === true;
                                 entry.querySelector('.skipPreviouslySynced').checked = account.SkipPreviouslySynced !== false;
                                 entry.querySelector('.stopOnFailure').checked = account.StopOnFailure === true;
@@ -308,6 +314,7 @@
                                     DateFilterDays: parseInt(entry.querySelector('.dateFilterDays').value, 10) || 7,
                                     EnableWatchlistSync: entry.querySelector('.enableWatchlistSync').checked,
                                     AutoRequestWatchlist: entry.querySelector('.autoRequestWatchlist').checked,
+                                    MirrorJellyseerrWatchlist: entry.querySelector('.mirrorJellyseerrWatchlist').checked,
                                     EnableDiaryImport: entry.querySelector('.enableDiaryImport').checked,
                                     SkipPreviouslySynced: entry.querySelector('.skipPreviouslySynced').checked,
                                     StopOnFailure: entry.querySelector('.stopOnFailure').checked
@@ -454,15 +461,23 @@
                             this.loadHistory(false);
                         },
 
+                        setSyncButtons: function (disabled) {
+                            document.getElementById('runSyncBtn').disabled = disabled;
+                            var wl = document.getElementById('runWatchlistSyncBtn');
+                            if (wl) wl.disabled = disabled;
+                        },
+
                         checkSyncRunning: function () {
                             var self = this;
                             ApiClient.getJSON(ApiClient.getUrl('ScheduledTasks')).then(function (tasks) {
-                                var syncTask = tasks.find(function (t) { return t.Key === 'LetterboxdSync'; });
-                                var diaryTask = tasks.find(function (t) { return t.Key === 'LetterboxdDiaryImport'; });
-                                var running = (syncTask && syncTask.State === 'Running') ? syncTask :
-                                              (diaryTask && diaryTask.State === 'Running') ? diaryTask : null;
+                                var keys = ['LetterboxdSync', 'LetterboxdDiaryImport', 'LetterboxdWatchlistSync'];
+                                var running = null;
+                                for (var i = 0; i < keys.length; i++) {
+                                    var t = tasks.find(function (x) { return x.Key === keys[i]; });
+                                    if (t && t.State === 'Running') { running = t; break; }
+                                }
                                 if (running) {
-                                    document.getElementById('runSyncBtn').disabled = true;
+                                    self.setSyncButtons(true);
                                     document.getElementById('syncStatus').innerHTML = '<span class="c-green">Sync in progress...</span>';
                                     self.pollTask(running.Id);
                                 }
@@ -478,7 +493,7 @@
                                     if (t.State === 'Idle') {
                                         clearInterval(self.syncPoll);
                                         self.syncPoll = null;
-                                        document.getElementById('runSyncBtn').disabled = false;
+                                        self.setSyncButtons(false);
                                         document.getElementById('syncStatus').innerHTML = '<span class="c-green">Done!</span>';
                                         document.getElementById('syncProgressBar').style.display = 'none';
                                         self.loadStats();
@@ -523,6 +538,25 @@
                                 if (!task) { document.getElementById('syncStatus').innerHTML = '<span class="c-red">Task not found</span>'; btn.disabled = false; return; }
                                 ApiClient.ajax({ url: ApiClient.getUrl('ScheduledTasks/Running/' + task.Id), type: 'POST' }).then(function () {
                                     document.getElementById('syncStatus').innerHTML = '<span class="c-green">Syncing...</span>';
+                                    self.pollTask(task.Id);
+                                });
+                            });
+                        },
+
+                        runWatchlistSync: function () {
+                            var self = this;
+                            self.setSyncButtons(true);
+                            document.getElementById('syncStatus').textContent = 'Starting watchlist sync...';
+
+                            ApiClient.getJSON(ApiClient.getUrl('ScheduledTasks')).then(function (tasks) {
+                                var task = tasks.find(function (t) { return t.Key === 'LetterboxdWatchlistSync'; });
+                                if (!task) {
+                                    document.getElementById('syncStatus').innerHTML = '<span class="c-red">Watchlist task not found</span>';
+                                    self.setSyncButtons(false);
+                                    return;
+                                }
+                                ApiClient.ajax({ url: ApiClient.getUrl('ScheduledTasks/Running/' + task.Id), type: 'POST' }).then(function () {
+                                    document.getElementById('syncStatus').innerHTML = '<span class="c-green">Syncing watchlist...</span>';
                                     self.pollTask(task.Id);
                                 });
                             });
@@ -605,6 +639,7 @@
                             document.getElementById('saveBtn').addEventListener('click', function () { self.saveSettings(); });
                             document.getElementById('testJellyseerrBtn').addEventListener('click', function () { self.testJellyseerr(); });
                             document.getElementById('runSyncBtn').addEventListener('click', function () { self.runSync(); });
+                            document.getElementById('runWatchlistSyncBtn').addEventListener('click', function () { self.runWatchlistSync(); });
                             document.getElementById('historyFirst').addEventListener('click', function () { self.gotoHistoryPage(1); });
                             document.getElementById('historyPrev').addEventListener('click', function () { self.gotoHistoryPage(Math.floor(self.historyOffset / self.historyPageSize)); });
                             document.getElementById('historyNext').addEventListener('click', function () { self.gotoHistoryPage(Math.floor(self.historyOffset / self.historyPageSize) + 2); });

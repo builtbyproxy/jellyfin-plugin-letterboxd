@@ -20,12 +20,18 @@ public class LetterboxdController : ControllerBase
     private readonly ILogger<LetterboxdController> _logger;
     private readonly IUserManager _userManager;
     private readonly LetterboxdSyncRunner _syncRunner;
+    private readonly WatchlistSyncRunner _watchlistRunner;
 
-    public LetterboxdController(ILogger<LetterboxdController> logger, IUserManager userManager, LetterboxdSyncRunner syncRunner)
+    public LetterboxdController(
+        ILogger<LetterboxdController> logger,
+        IUserManager userManager,
+        LetterboxdSyncRunner syncRunner,
+        WatchlistSyncRunner watchlistRunner)
     {
         _logger = logger;
         _userManager = userManager;
         _syncRunner = syncRunner;
+        _watchlistRunner = watchlistRunner;
     }
 
     private static PluginConfiguration Config => Plugin.Instance!.Configuration;
@@ -90,6 +96,47 @@ public class LetterboxdController : ControllerBase
         return Accepted(new { started = true });
     }
 
+    /// <summary>
+    /// Trigger a Letterboxd → Jellyfin playlist (and optional Jellyseerr) watchlist sync
+    /// for the calling user. Same shape as <see cref="StartSync"/>: 202 immediately,
+    /// 409 if any sync is in flight, 400 if the user has no watchlist-enabled account.
+    /// </summary>
+    [HttpPost("SyncWatchlist")]
+    [ProducesResponseType(StatusCodes.Status202Accepted)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public ActionResult StartWatchlistSync()
+    {
+        var userId = GetCurrentUserId();
+        if (string.IsNullOrEmpty(userId))
+            return BadRequest(new { error = "Could not determine user" });
+
+        if (LetterboxdSyncRunner.IsRunning)
+            return Conflict(new { error = "Sync already running" });
+
+        var account = Config.Accounts.FirstOrDefault(a => a.Enabled && a.UserJellyfinId == userId);
+        if (account == null)
+            return BadRequest(new { error = "No enabled Letterboxd account is configured for your user" });
+
+        if (!account.EnableWatchlistSync)
+            return BadRequest(new { error = "Watchlist sync is disabled for your account; enable it in Settings first" });
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _watchlistRunner.TryRunForUserAsync(userId, "manual", new Progress<double>(), System.Threading.CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "User-triggered watchlist sync for {UserId} crashed", userId);
+            }
+        });
+
+        return Accepted(new { started = true });
+    }
+
     [HttpGet("Stats")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public ActionResult GetStats()
@@ -147,6 +194,7 @@ public class LetterboxdController : ControllerBase
                 enableWatchlistSync = false,
                 enableDiaryImport = false,
                 autoRequestWatchlist = false,
+                mirrorJellyseerrWatchlist = false,
                 skipPreviouslySynced = true,
                 stopOnFailure = false,
                 isConfigured = false
@@ -166,6 +214,7 @@ public class LetterboxdController : ControllerBase
             enableWatchlistSync = account.EnableWatchlistSync,
             enableDiaryImport = account.EnableDiaryImport,
             autoRequestWatchlist = account.AutoRequestWatchlist,
+            mirrorJellyseerrWatchlist = account.MirrorJellyseerrWatchlist,
             skipPreviouslySynced = account.SkipPreviouslySynced,
             stopOnFailure = account.StopOnFailure,
             isConfigured = true
@@ -199,6 +248,7 @@ public class LetterboxdController : ControllerBase
         account.EnableWatchlistSync = request.EnableWatchlistSync;
         account.EnableDiaryImport = request.EnableDiaryImport;
         account.AutoRequestWatchlist = request.AutoRequestWatchlist;
+        account.MirrorJellyseerrWatchlist = request.MirrorJellyseerrWatchlist;
         account.SkipPreviouslySynced = request.SkipPreviouslySynced;
         account.StopOnFailure = request.StopOnFailure;
 
