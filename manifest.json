@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.11.0.0",
+        "changelog": "Bidirectional rating sync: dashboard reviews mirror their star rating into Jellyfin's UserItemData.Rating (always overwrites), and the daily diary import seeds Jellyfin ratings from Letterboxd for films that don't yet have a Jellyfin rating (anti-clobber). Switched the diary import API path from /log-entries to /films?memberRelationship=Watched so films you rated on Letterboxd without logging a watch now sync too. New in-dashboard Logs tab with per-user and free-text filters, copy-to-clipboard, and download-as-.log for support requests. Privacy hardening: review text is no longer logged.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/releases/download/v1.11.0/jellyfin-plugin-letterboxd-v1.11.0.zip",
+        "checksum": "PLACEHOLDER",
+        "timestamp": "2026-05-05T00:00:00Z"
+      },
+      {
         "version": "1.10.1.0",
         "changelog": "Maintenance: bump GitHub Actions runtime versions (checkout v6, setup-dotnet v5, action-gh-release v3) to remain on a supported Node version. No plugin behaviour changes.",
         "targetAbi": "10.11.0.0",
