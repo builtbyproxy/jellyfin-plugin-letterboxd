@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.10.1.0",
+        "changelog": "Maintenance: bump GitHub Actions runtime versions (checkout v6, setup-dotnet v5, action-gh-release v3) to remain on a supported Node version. No plugin behaviour changes.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/releases/download/v1.10.1/jellyfin-plugin-letterboxd-v1.10.1.zip",
+        "checksum": "PLACEHOLDER",
+        "timestamp": "2026-05-04T00:00:00Z"
+      },
+      {
         "version": "1.10.0.0",
         "changelog": "Mirror Letterboxd watchlist into Jellyseerr's user watchlist (per-account toggle, two-way sync, movies-only so manually-added Jellyseerr TV is safe). On-demand 'Sync Watchlist Now' button on the plugin dashboard so you don't have to wait for the daily run. Pre-flight check against Jellyseerr's media status eliminates duplicate requests on every run (was creating fresh requests for already-pending/processing/available titles). Per-user watchlist sync runner extracted with a shared SyncGate so diary and watchlist syncs serialise.",
         "targetAbi": "10.11.0.0",
