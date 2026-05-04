@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/actions/workflows/ci.yml/badge.svg)](https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/actions/workflows/ci.yml)
 [![Release](https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/actions/workflows/release.yml/badge.svg)](https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/actions/workflows/release.yml)
+[![codecov](https://codecov.io/gh/builtbyproxy/jellyfin-plugin-letterboxd/branch/main/graph/badge.svg)](https://codecov.io/gh/builtbyproxy/jellyfin-plugin-letterboxd)
 [![GitHub release](https://img.shields.io/github/v/release/builtbyproxy/jellyfin-plugin-letterboxd)](https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Downloads](https://img.shields.io/github/downloads/builtbyproxy/jellyfin-plugin-letterboxd/total)](https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/releases)
