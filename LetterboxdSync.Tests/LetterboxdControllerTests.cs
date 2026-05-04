@@ -303,7 +303,11 @@ public class LetterboxdControllerTests
         var result = h.Controller.StartWatchlistSync();
 
         Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("Watchlist sync is disabled", Prop<string>(result, "error") ?? string.Empty);
+        // Without a specific letterboxdUsername, the multi-account controller returns
+        // the broader "no eligible accounts" error rather than the per-account
+        // "Watchlist sync is disabled" message.
+        Assert.Contains("No enabled accounts with watchlist sync",
+            Prop<string>(result, "error") ?? string.Empty);
     }
 
     [Fact]
@@ -375,7 +379,9 @@ public class LetterboxdControllerTests
         });
 
         Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Contains("No Letterboxd account configured", Prop<string>(result, "error") ?? string.Empty);
+        // Multi-account controller pluralises ("No Letterboxd accounts configured"),
+        // singular form remained on main pre-multi-account; assert on the shared prefix.
+        Assert.Contains("No Letterboxd account", Prop<string>(result, "error") ?? string.Empty);
     }
 
     [Fact]
