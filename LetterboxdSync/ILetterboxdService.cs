@@ -21,4 +21,6 @@ public interface ILetterboxdService : IDisposable
     Task<List<int>> GetWatchlistTmdbIdsAsync(string username);
 
     Task<List<int>> GetDiaryTmdbIdsAsync(string username);
+
+    Task<List<DiaryFilmEntry>> GetDiaryFilmEntriesAsync(string username);
 }

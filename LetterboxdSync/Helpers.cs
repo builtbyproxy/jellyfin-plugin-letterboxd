@@ -21,6 +21,18 @@ public static class Helpers
     }
 
     /// <summary>
+    /// Map a Letterboxd rating (0.5-5.0) to a Jellyfin rating (1-10).
+    /// Returns null if the input is null or out of range.
+    /// </summary>
+    public static double? LetterboxdToJellyfinRating(double? letterboxdRating)
+    {
+        if (!letterboxdRating.HasValue || letterboxdRating.Value <= 0)
+            return null;
+
+        return Math.Clamp(letterboxdRating.Value * 2.0, 1.0, 10.0);
+    }
+
+    /// <summary>
     /// Extract a film slug from a Letterboxd film URL.
     /// e.g. "https://letterboxd.com/film/gladiator-ii/" -> "gladiator-ii"
     /// </summary>

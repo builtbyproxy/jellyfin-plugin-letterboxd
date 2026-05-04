@@ -260,17 +260,32 @@ public class LetterboxdApiClient : ILetterboxdService
 
     public async Task<List<int>> GetDiaryTmdbIdsAsync(string username)
     {
+        var entries = await GetDiaryFilmEntriesAsync(username).ConfigureAwait(false);
+        return entries.Select(e => e.TmdbId).ToList();
+    }
+
+    /// <summary>
+    /// Returns every film the member has marked Watched on Letterboxd, including
+    /// ones rated without a diary entry. Each entry includes the member's personal
+    /// rating when set. Backed by /films?memberRelationship=Watched, which is a
+    /// superset of /log-entries (the diary endpoint), so films you rated without
+    /// logging a watch are also included.
+    /// </summary>
+    public async Task<List<DiaryFilmEntry>> GetDiaryFilmEntriesAsync(string username)
+    {
         EnsureAuthenticated();
-        var tmdbIds = new List<int>();
-        string? cursor = null;
+        var entries = new List<DiaryFilmEntry>();
+        var seen = new HashSet<int>();
+        const int perPage = 100;
 
         for (int page = 0; page < 50; page++)
         {
-            var qp = $"perPage=100&member={Uri.EscapeDataString(_memberId)}";
-            if (cursor != null)
-                qp += $"&cursor={Uri.EscapeDataString(cursor)}";
+            var qp = $"perPage={perPage}&member={Uri.EscapeDataString(_memberId)}" +
+                    "&memberRelationship=Watched&include=MemberRelationship";
+            if (page > 0)
+                qp += $"&start={page * perPage}";
 
-            var response = await SendSignedAsync(HttpMethod.Get, "/log-entries",
+            var response = await SendSignedAsync(HttpMethod.Get, "/films",
                 queryParams: qp, authenticated: true).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
 
@@ -283,21 +298,57 @@ public class LetterboxdApiClient : ILetterboxdService
 
             foreach (var item in items.EnumerateArray())
             {
-                if (item.TryGetProperty("film", out var film))
-                {
-                    var tmdbId = ExtractTmdbId(film);
-                    if (tmdbId.HasValue && !tmdbIds.Contains(tmdbId.Value))
-                        tmdbIds.Add(tmdbId.Value);
-                }
+                var tmdbId = ExtractTmdbIdFromLinks(item);
+                if (!tmdbId.HasValue || !seen.Add(tmdbId.Value)) continue;
+
+                double? rating = ExtractMemberRating(item);
+                entries.Add(new DiaryFilmEntry(tmdbId.Value, rating));
             }
 
-            if (doc.RootElement.TryGetProperty("cursor", out var cursorEl))
-                cursor = cursorEl.GetString();
-            else
+            // Letterboxd signals more pages via `next: "start=N"`. Stop when missing.
+            if (!doc.RootElement.TryGetProperty("next", out _))
                 break;
         }
 
-        return tmdbIds;
+        return entries;
+    }
+
+    /// <summary>
+    /// Pull TMDb ID from a FilmSummary's `links` array.
+    /// FilmSummary uses `links: [{type:"tmdb", id:"123"}, ...]` rather than a
+    /// nested `film` object with provider IDs (which is what /log-entries returns).
+    /// </summary>
+    internal static int? ExtractTmdbIdFromLinks(JsonElement film)
+    {
+        if (!film.TryGetProperty("links", out var links) || links.ValueKind != JsonValueKind.Array)
+            return null;
+
+        foreach (var link in links.EnumerateArray())
+        {
+            if (!link.TryGetProperty("type", out var type)) continue;
+            if (!string.Equals(type.GetString(), "tmdb", StringComparison.OrdinalIgnoreCase)) continue;
+            if (!link.TryGetProperty("id", out var idEl)) continue;
+            if (int.TryParse(idEl.GetString(), out var id)) return id;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Pull the member's personal rating from a FilmSummary returned with
+    /// `include=MemberRelationship`. Lives at relationships[0].relationship.rating.
+    /// </summary>
+    internal static double? ExtractMemberRating(JsonElement film)
+    {
+        if (!film.TryGetProperty("relationships", out var rels) ||
+            rels.ValueKind != JsonValueKind.Array || rels.GetArrayLength() == 0)
+            return null;
+
+        var first = rels[0];
+        if (!first.TryGetProperty("relationship", out var rel)) return null;
+        if (!rel.TryGetProperty("rating", out var ratingEl)) return null;
+        if (ratingEl.ValueKind != JsonValueKind.Number) return null;
+
+        return ratingEl.GetDouble();
     }
 
     public void Dispose()

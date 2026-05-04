@@ -182,7 +182,17 @@ public class LetterboxdDiary
             payload["filmId"] = filmId;
 
         var jsonBody = JsonSerializer.Serialize(payload);
-        _logger.LogInformation("PostReview payload: {Body}", jsonBody);
+        // Log payload metadata only — never the review text itself, since users
+        // share these logs for support and review drafts can be private.
+        _logger.LogInformation(
+            "PostReview prepared for {FilmSlug}: hasText={HasText}, textLen={TextLen}, " +
+            "rating={Rating}, isRewatch={IsRewatch}, containsSpoilers={Spoilers}",
+            filmSlug,
+            !string.IsNullOrEmpty(reviewText),
+            reviewText?.Length ?? 0,
+            rating,
+            isRewatch,
+            containsSpoilers);
 
         for (int attempt = 0; attempt < LetterboxdHttpClient.MaxRetries; attempt++)
         {

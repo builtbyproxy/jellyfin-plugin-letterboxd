@@ -142,7 +142,19 @@ public class LetterboxdScraper
     /// </summary>
     public async Task<List<int>> GetDiaryTmdbIdsAsync(string username)
     {
-        var tmdbIds = new List<int>();
+        var entries = await GetDiaryFilmEntriesAsync(username).ConfigureAwait(false);
+        return entries.Select(e => e.TmdbId).ToList();
+    }
+
+    /// <summary>
+    /// Scrape all films a user has logged on Letterboxd, returning TMDb ID and rating
+    /// (when present) for each. Same source as GetDiaryTmdbIdsAsync but preserves the
+    /// per-film rating parsed from the poster HTML.
+    /// </summary>
+    public async Task<List<DiaryFilmEntry>> GetDiaryFilmEntriesAsync(string username)
+    {
+        var entries = new List<DiaryFilmEntry>();
+        var seenTmdbIds = new HashSet<int>();
         var page = 1;
         const int maxPages = 50;
 
@@ -157,7 +169,7 @@ public class LetterboxdScraper
             if (!res.IsSuccessStatusCode)
             {
                 _logger.LogWarning("Films page {Page} for {Username} returned {Status}. Returning {Count} films found so far.",
-                    page, username, (int)res.StatusCode, tmdbIds.Count);
+                    page, username, (int)res.StatusCode, entries.Count);
                 break;
             }
 
@@ -169,20 +181,25 @@ public class LetterboxdScraper
             {
                 _logger.LogWarning("Cloudflare challenge detected on films page {Page} for {Username}. " +
                     "Returning {Count} films found so far. Try providing raw cookies with cf_clearance.",
-                    page, username, tmdbIds.Count);
+                    page, username, entries.Count);
                 break;
             }
 
             var doc = new HtmlDocument();
             doc.LoadHtml(html);
 
-            var posters = doc.DocumentNode.SelectNodes("//li[contains(@class, 'poster-container')]//div[@data-film-slug]");
-            if (posters == null)
-                posters = doc.DocumentNode.SelectNodes("//div[@data-component-class='LazyPoster']");
-            if (posters == null)
-                posters = doc.DocumentNode.SelectNodes("//div[@data-film-slug]");
+            // Prefer the poster-container <li> so we can look up the rating span alongside the slug.
+            // Fall back to bare poster nodes if Letterboxd's layout shifts; rating just won't be captured then.
+            var containers = doc.DocumentNode.SelectNodes("//li[contains(@class, 'poster-container')]");
+            HtmlNodeCollection? fallbackPosters = null;
+            if (containers == null || containers.Count == 0)
+            {
+                fallbackPosters = doc.DocumentNode.SelectNodes("//div[@data-component-class='LazyPoster']")
+                    ?? doc.DocumentNode.SelectNodes("//div[@data-film-slug]");
+            }
 
-            if (posters == null || posters.Count == 0)
+            int posterCount = containers?.Count ?? fallbackPosters?.Count ?? 0;
+            if (posterCount == 0)
             {
                 if (page == 1)
                     _logger.LogWarning("No films found on page 1 for {Username}. " +
@@ -191,21 +208,49 @@ public class LetterboxdScraper
             }
 
             _logger.LogInformation("Films page {Page} for {Username}: found {Count} posters, resolving TMDb IDs...",
-                page, username, posters.Count);
+                page, username, posterCount);
             SyncProgress.SetPhase($"Scanning page {page}");
 
-            foreach (var poster in posters)
+            if (containers != null)
             {
-                var slug = poster.GetAttributeValue("data-film-slug", string.Empty);
-                if (string.IsNullOrEmpty(slug))
-                    slug = poster.GetAttributeValue("data-item-slug", string.Empty);
-                if (string.IsNullOrEmpty(slug)) continue;
-
-                var tmdbId = await ResolveTmdbIdFromSlugAsync(slug).ConfigureAwait(false);
-                if (tmdbId.HasValue && !tmdbIds.Contains(tmdbId.Value))
+                foreach (var container in containers)
                 {
-                    tmdbIds.Add(tmdbId.Value);
-                    _logger.LogDebug("Films: {Slug} -> TMDb:{TmdbId}", slug, tmdbId.Value);
+                    var posterDiv = container.SelectSingleNode(".//div[@data-film-slug]")
+                        ?? container.SelectSingleNode(".//div[@data-component-class='LazyPoster']");
+                    if (posterDiv == null) continue;
+
+                    var slug = posterDiv.GetAttributeValue("data-film-slug", string.Empty);
+                    if (string.IsNullOrEmpty(slug))
+                        slug = posterDiv.GetAttributeValue("data-item-slug", string.Empty);
+                    if (string.IsNullOrEmpty(slug)) continue;
+
+                    var rating = ExtractRatingFromContainer(container);
+
+                    var tmdbId = await ResolveTmdbIdFromSlugAsync(slug).ConfigureAwait(false);
+                    if (tmdbId.HasValue && seenTmdbIds.Add(tmdbId.Value))
+                    {
+                        entries.Add(new DiaryFilmEntry(tmdbId.Value, rating));
+                        _logger.LogDebug("Films: {Slug} -> TMDb:{TmdbId} Rating:{Rating}",
+                            slug, tmdbId.Value, rating?.ToString() ?? "none");
+                    }
+                }
+            }
+            else if (fallbackPosters != null)
+            {
+                foreach (var poster in fallbackPosters)
+                {
+                    var slug = poster.GetAttributeValue("data-film-slug", string.Empty);
+                    if (string.IsNullOrEmpty(slug))
+                        slug = poster.GetAttributeValue("data-item-slug", string.Empty);
+                    if (string.IsNullOrEmpty(slug)) continue;
+
+                    var tmdbId = await ResolveTmdbIdFromSlugAsync(slug).ConfigureAwait(false);
+                    if (tmdbId.HasValue && seenTmdbIds.Add(tmdbId.Value))
+                    {
+                        entries.Add(new DiaryFilmEntry(tmdbId.Value, null));
+                        _logger.LogDebug("Films: {Slug} -> TMDb:{TmdbId} (no rating, fallback selector)",
+                            slug, tmdbId.Value);
+                    }
                 }
             }
 
@@ -215,9 +260,33 @@ public class LetterboxdScraper
         }
 
         _logger.LogInformation("Found {Count} films across {Pages} pages for {Username}",
-            tmdbIds.Count, page, username);
+            entries.Count, page, username);
 
-        return tmdbIds;
+        return entries;
+    }
+
+    /// <summary>
+    /// Extract a Letterboxd star rating (0.5-5.0) from a poster-container li.
+    /// Letterboxd marks rated films with a class like "rated-7", where the integer
+    /// represents half-stars (rated-1 = 0.5 stars, rated-10 = 5.0 stars).
+    /// Returns null when no rating is set.
+    /// </summary>
+    internal static double? ExtractRatingFromContainer(HtmlNode container)
+    {
+        var ratingNode = container.SelectSingleNode(".//span[contains(@class, 'rating') and contains(@class, 'rated-')]")
+            ?? container.SelectSingleNode(".//*[contains(@class, 'rated-')]");
+        if (ratingNode == null) return null;
+
+        var classes = ratingNode.GetAttributeValue("class", string.Empty);
+        foreach (var cls in classes.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (!cls.StartsWith("rated-", StringComparison.OrdinalIgnoreCase)) continue;
+            if (!int.TryParse(cls.AsSpan(6), out var halfStars)) continue;
+            if (halfStars < 1 || halfStars > 10) continue;
+            return halfStars / 2.0;
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -336,3 +405,9 @@ public class LetterboxdScraper
 }
 
 public record DiaryInfo(DateTime? LastDate, bool HasAnyEntry);
+
+/// <summary>
+/// A film from a user's Letterboxd films page, with optional rating.
+/// Rating is on Letterboxd's 0.5-5.0 scale (rated-1 class = 0.5 stars, rated-10 = 5.0).
+/// </summary>
+public record DiaryFilmEntry(int TmdbId, double? Rating);

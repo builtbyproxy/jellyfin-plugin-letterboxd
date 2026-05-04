@@ -70,6 +70,7 @@
                 <div class="lb-tabs">
                     <button type="button" class="lb-tab active" data-tab="stats">Dashboard</button>
                     <button type="button" class="lb-tab" data-tab="settings">Settings</button>
+                    <button type="button" class="lb-tab" data-tab="logs">Logs</button>
                 </div>
 
                 <!-- DASHBOARD TAB -->
@@ -136,6 +137,26 @@
                     </div>
                 </div>
 
+                <!-- LOGS TAB -->
+                <div id="tab-logs" class="lb-tab-content" style="display:none;">
+                    <p class="c-muted" style="font-size:0.9em;margin-bottom:1em;">
+                        Recent LetterboxdSync log entries from Jellyfin's main log file. Safe to share for support &mdash;
+                        review text, passwords, cookies, and auth tokens are never logged.
+                    </p>
+                    <div style="display:flex;gap:0.7em;align-items:center;margin-bottom:0.8em;flex-wrap:wrap;">
+                        <button type="button" class="lb-btn lb-btn-secondary" id="logsRefreshBtn">Refresh</button>
+                        <label class="lb-field" style="margin:0;">User</label>
+                        <select id="logsUserFilter" style="min-width:180px;">
+                            <option value="">All users</option>
+                        </select>
+                        <input type="text" id="logsTextFilter" placeholder="Filter text (e.g. film title)" style="min-width:180px;" />
+                        <button type="button" class="lb-btn lb-btn-secondary" id="logsCopyBtn">Copy</button>
+                        <button type="button" class="lb-btn lb-btn-secondary" id="logsDownloadBtn">Download .log</button>
+                        <span id="logsStatus" class="c-muted" style="font-size:0.85em;"></span>
+                    </div>
+                    <pre id="logsOutput" style="background:#0a0a0a;color:#cfcfcf;padding:1em;border-radius:6px;max-height:60vh;overflow:auto;font-size:0.78em;line-height:1.4;white-space:pre-wrap;word-break:break-word;border:1px solid rgba(255,255,255,0.06);">Loading...</pre>
+                </div>
+
                 <!-- REVIEW MODAL -->
                 <div id="reviewModal" class="lb-modal-overlay">
                     <div class="lb-modal">
@@ -191,15 +212,138 @@
                         historyTotal: 0,
 
                         initTabs: function () {
+                            var self = this;
                             var tabs = document.querySelectorAll('.lb-tab');
                             tabs.forEach(function (tab) {
                                 tab.addEventListener('click', function () {
                                     tabs.forEach(function (t) { t.classList.remove('active'); });
                                     tab.classList.add('active');
                                     document.querySelectorAll('.lb-tab-content').forEach(function (c) { c.style.display = 'none'; });
-                                    document.getElementById('tab-' + tab.getAttribute('data-tab')).style.display = '';
+                                    var name = tab.getAttribute('data-tab');
+                                    document.getElementById('tab-' + name).style.display = '';
+                                    if (name === 'logs') self.loadLogs();
                                 });
                             });
+                        },
+
+                        loadLogs: function () {
+                            var self = this;
+                            var output = document.getElementById('logsOutput');
+                            var status = document.getElementById('logsStatus');
+                            if (!output) return;
+                            output.textContent = 'Loading...';
+                            status.textContent = '';
+                            self.populateLogsUserFilter();
+                            ApiClient.fetch({
+                                url: ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/Logs?maxLines=500'),
+                                type: 'GET',
+                                dataType: 'json'
+                            }).then(function (data) {
+                                self.logsRaw = data.lines || [];
+                                self.logsSource = data.source;
+                                self.logsTotal = data.totalMatches || 0;
+                                if (self.logsRaw.length === 0) {
+                                    output.textContent = data.error
+                                        ? '(error: ' + data.error + ')'
+                                        : '(no LetterboxdSync log entries found in ' + (data.source || 'recent logs') + ')';
+                                    return;
+                                }
+                                self.applyLogsFilter();
+                                output.scrollTop = output.scrollHeight;
+                            }).catch(function (err) {
+                                self.logsRaw = [];
+                                output.textContent = '(failed to load logs: ' + (err && err.message ? err.message : err) + ')';
+                            });
+                        },
+
+                        // Populate the user dropdown from the configured accounts.
+                        // Each option carries both the Jellyfin username and the Letterboxd
+                        // username so we can match either string in log lines.
+                        populateLogsUserFilter: function () {
+                            var sel = document.getElementById('logsUserFilter');
+                            if (!sel) return;
+                            // Read currently configured accounts off the rendered settings form.
+                            var accounts = this.collectAccounts ? this.collectAccounts() : [];
+                            var current = sel.value;
+                            sel.innerHTML = '<option value="">All users</option>';
+                            var seen = {};
+                            accounts.forEach(function (a) {
+                                var jfUserId = a.UserJellyfinId || '';
+                                var lbUser = a.LetterboxdUsername || '';
+                                if (!jfUserId && !lbUser) return;
+                                var jfUser = '';
+                                if (window.LB && LB.users) {
+                                    var match = LB.users.find(function (u) { return u.Id.replace(/-/g, '') === jfUserId; });
+                                    if (match) jfUser = match.Name;
+                                }
+                                // Combine both usernames as a single filter value separated by 
+                                // so we can match either in the log line.
+                                var key = jfUser + '' + lbUser;
+                                if (seen[key]) return;
+                                seen[key] = true;
+                                var label = (jfUser || '?') + (lbUser ? ' → ' + lbUser : '');
+                                sel.insertAdjacentHTML('beforeend',
+                                    '<option value="' + key.replace(/"/g, '&quot;') + '">' + label + '</option>');
+                            });
+                            if (current) sel.value = current;
+                        },
+
+                        applyLogsFilter: function () {
+                            var output = document.getElementById('logsOutput');
+                            var status = document.getElementById('logsStatus');
+                            if (!output || !this.logsRaw) return;
+                            var userVal = document.getElementById('logsUserFilter').value;
+                            var textVal = (document.getElementById('logsTextFilter').value || '').trim();
+                            var filtered = this.logsRaw;
+                            if (userVal) {
+                                var parts = userVal.split('');
+                                var jfUser = parts[0] || '';
+                                var lbUser = parts[1] || '';
+                                filtered = filtered.filter(function (line) {
+                                    if (jfUser && line.indexOf(jfUser) !== -1) return true;
+                                    if (lbUser && line.indexOf(lbUser) !== -1) return true;
+                                    return false;
+                                });
+                            }
+                            if (textVal) {
+                                var needle = textVal.toLowerCase();
+                                filtered = filtered.filter(function (line) {
+                                    return line.toLowerCase().indexOf(needle) !== -1;
+                                });
+                            }
+                            output.textContent = filtered.length > 0
+                                ? filtered.join('\n')
+                                : '(no log lines match the current filter)';
+                            status.textContent = 'Showing ' + filtered.length + ' of ' + this.logsTotal +
+                                ' matches from ' + (this.logsSource || '');
+                        },
+
+                        copyLogs: function () {
+                            var output = document.getElementById('logsOutput');
+                            if (!output || !output.textContent) return;
+                            var status = document.getElementById('logsStatus');
+                            if (navigator.clipboard && navigator.clipboard.writeText) {
+                                navigator.clipboard.writeText(output.textContent)
+                                    .then(function () { status.textContent = 'Copied to clipboard'; })
+                                    .catch(function () { status.textContent = 'Copy failed'; });
+                            } else {
+                                status.textContent = 'Clipboard API unavailable';
+                            }
+                        },
+
+                        downloadLogs: function () {
+                            var output = document.getElementById('logsOutput');
+                            if (!output || !output.textContent) return;
+                            var stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+                            var blob = new Blob([output.textContent], { type: 'text/plain' });
+                            var url = URL.createObjectURL(blob);
+                            var a = document.createElement('a');
+                            a.href = url;
+                            a.download = 'letterboxd-sync_' + stamp + '.log';
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            URL.revokeObjectURL(url);
                         },
 
                         getUserOptions: function () {
@@ -640,6 +784,11 @@
                             document.getElementById('testJellyseerrBtn').addEventListener('click', function () { self.testJellyseerr(); });
                             document.getElementById('runSyncBtn').addEventListener('click', function () { self.runSync(); });
                             document.getElementById('runWatchlistSyncBtn').addEventListener('click', function () { self.runWatchlistSync(); });
+                            document.getElementById('logsRefreshBtn').addEventListener('click', function () { self.loadLogs(); });
+                            document.getElementById('logsCopyBtn').addEventListener('click', function () { self.copyLogs(); });
+                            document.getElementById('logsDownloadBtn').addEventListener('click', function () { self.downloadLogs(); });
+                            document.getElementById('logsUserFilter').addEventListener('change', function () { self.applyLogsFilter(); });
+                            document.getElementById('logsTextFilter').addEventListener('input', function () { self.applyLogsFilter(); });
                             document.getElementById('historyFirst').addEventListener('click', function () { self.gotoHistoryPage(1); });
                             document.getElementById('historyPrev').addEventListener('click', function () { self.gotoHistoryPage(Math.floor(self.historyOffset / self.historyPageSize)); });
                             document.getElementById('historyNext').addEventListener('click', function () { self.gotoHistoryPage(Math.floor(self.historyOffset / self.historyPageSize) + 2); });
