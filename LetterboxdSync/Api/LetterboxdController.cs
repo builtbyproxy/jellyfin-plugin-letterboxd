@@ -267,6 +267,11 @@ public class LetterboxdController : ControllerBase
         account.MirrorJellyseerrWatchlist = request.MirrorJellyseerrWatchlist;
         account.SkipPreviouslySynced = request.SkipPreviouslySynced;
         account.StopOnFailure = request.StopOnFailure;
+        account.IsPrimary = request.IsPrimary;
+        account.PlaylistName = request.PlaylistName;
+
+        // Keep the single-primary-per-user invariant after the user toggles flags.
+        Config.NormalisePrimaryFlags();
 
         Plugin.Instance!.SaveConfiguration();
         _logger.LogInformation("User {UserId} saved their Letterboxd account settings", userId);

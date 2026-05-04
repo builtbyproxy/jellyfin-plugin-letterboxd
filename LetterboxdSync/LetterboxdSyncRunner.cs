@@ -54,21 +54,21 @@ public class LetterboxdSyncRunner
 
         try
         {
-            var users = _userManager.Users.ToList();
-            var processedUsers = 0;
+            // Fan out across every (user, account) pair. Each account's sync is
+            // independent so one failing or rate-limited account never blocks the others.
+            var pairs = _userManager.Users
+                .SelectMany(u => Config.GetEnabledAccountsForUser(u.Id.ToString("N"))
+                    .Select(a => (User: u, Account: a)))
+                .ToList();
 
-            foreach (var user in users)
+            var processed = 0;
+            foreach (var (user, account) in pairs)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-
-                var account = Config.Accounts.FirstOrDefault(
-                    a => a.Enabled && a.UserJellyfinId == user.Id.ToString("N"));
-                if (account == null) continue;
-
                 await SyncOneUserAsync(user, account, source, cancellationToken).ConfigureAwait(false);
-
-                processedUsers++;
-                progress.Report((double)processedUsers / users.Count * 100);
+                processed++;
+                if (pairs.Count > 0)
+                    progress.Report((double)processed / pairs.Count * 100);
             }
 
             progress.Report(100);
@@ -80,10 +80,17 @@ public class LetterboxdSyncRunner
     }
 
     /// <summary>
-    /// Run sync for a single user. Returns false if another sync is already running,
-    /// the user is unknown, or they have no enabled account.
+    /// Run sync for a single user. When letterboxdUsername is null/empty, fan out
+    /// across all enabled accounts for the user. Otherwise target only that account.
+    /// Returns false if another sync is already running, the user is unknown, or
+    /// they have no matching enabled account.
     /// </summary>
-    public async Task<bool> TryRunForUserAsync(string userJellyfinId, string source, IProgress<double> progress, CancellationToken cancellationToken)
+    public async Task<bool> TryRunForUserAsync(
+        string userJellyfinId,
+        string source,
+        IProgress<double> progress,
+        CancellationToken cancellationToken,
+        string? letterboxdUsername = null)
     {
         if (!await SyncGate.Instance.WaitAsync(0, cancellationToken).ConfigureAwait(false))
         {
@@ -100,16 +107,36 @@ public class LetterboxdSyncRunner
                 return false;
             }
 
-            var account = Config.Accounts.FirstOrDefault(
-                a => a.Enabled && a.UserJellyfinId == userJellyfinId);
-            if (account == null)
+            List<Account> accounts;
+            if (!string.IsNullOrEmpty(letterboxdUsername))
             {
-                _logger.LogWarning("No enabled Letterboxd account for {Username}, cannot start sync", user.Username);
-                return false;
+                var single = Config.FindAccount(userJellyfinId, letterboxdUsername);
+                if (single == null)
+                {
+                    _logger.LogWarning("No enabled Letterboxd account {LbUser} for {Username}, cannot start sync",
+                        letterboxdUsername, user.Username);
+                    return false;
+                }
+                accounts = new List<Account> { single };
+            }
+            else
+            {
+                accounts = Config.GetEnabledAccountsForUser(userJellyfinId).ToList();
+                if (accounts.Count == 0)
+                {
+                    _logger.LogWarning("No enabled Letterboxd accounts for {Username}, cannot start sync", user.Username);
+                    return false;
+                }
             }
 
-            await SyncOneUserAsync(user, account, source, cancellationToken).ConfigureAwait(false);
-            progress.Report(100);
+            var processed = 0;
+            foreach (var account in accounts)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await SyncOneUserAsync(user, account, source, cancellationToken).ConfigureAwait(false);
+                processed++;
+                progress.Report((double)processed / accounts.Count * 100);
+            }
             return true;
         }
         finally

@@ -53,22 +53,22 @@ public class WatchlistSyncRunner
         {
             using var jellyseerr = CreateJellyseerrClient();
 
-            var users = _userManager.Users.ToList();
-            var processed = 0;
+            var pairs = _userManager.Users
+                .SelectMany(u => Config.GetEnabledAccountsForUser(u.Id.ToString("N"))
+                    .Where(a => a.EnableWatchlistSync)
+                    .Select(a => (User: u, Account: a)))
+                .ToList();
+
             SyncProgress.Start("Letterboxd Watchlist", "Starting");
 
-            foreach (var user in users)
+            var processed = 0;
+            foreach (var (user, account) in pairs)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-
-                var account = Config.Accounts.FirstOrDefault(
-                    a => a.Enabled && a.EnableWatchlistSync && a.UserJellyfinId == user.Id.ToString("N"));
-                if (account == null) continue;
-
                 await SyncOneUserAsync(user, account, jellyseerr, source, cancellationToken).ConfigureAwait(false);
-
                 processed++;
-                progress.Report((double)processed / users.Count * 100);
+                if (pairs.Count > 0)
+                    progress.Report((double)processed / pairs.Count * 100);
             }
 
             progress.Report(100);
@@ -81,10 +81,17 @@ public class WatchlistSyncRunner
     }
 
     /// <summary>
-    /// Run watchlist sync for a single user. Returns false if another sync is already
-    /// running, the user is unknown, or they have no enabled-with-watchlist account.
+    /// Run watchlist sync for a single user. When letterboxdUsername is null/empty,
+    /// fans out across every enabled-with-watchlist account for that user. Otherwise
+    /// targets only the named account. Returns false if another sync is already
+    /// running, the user is unknown, or they have no matching account.
     /// </summary>
-    public async Task<bool> TryRunForUserAsync(string userJellyfinId, string source, IProgress<double> progress, CancellationToken cancellationToken)
+    public async Task<bool> TryRunForUserAsync(
+        string userJellyfinId,
+        string source,
+        IProgress<double> progress,
+        CancellationToken cancellationToken,
+        string? letterboxdUsername = null)
     {
         if (!await SyncGate.Instance.WaitAsync(0, cancellationToken).ConfigureAwait(false))
         {
@@ -101,18 +108,44 @@ public class WatchlistSyncRunner
                 return false;
             }
 
-            var account = Config.Accounts.FirstOrDefault(
-                a => a.Enabled && a.EnableWatchlistSync && a.UserJellyfinId == userJellyfinId);
-            if (account == null)
+            var enabled = Config.GetEnabledAccountsForUser(userJellyfinId)
+                .Where(a => a.EnableWatchlistSync)
+                .ToList();
+
+            List<Account> accounts;
+            if (!string.IsNullOrEmpty(letterboxdUsername))
             {
-                _logger.LogWarning("No enabled watchlist-sync account for {Username}", user.Username);
-                return false;
+                var single = enabled.FirstOrDefault(a => string.Equals(
+                    a.LetterboxdUsername, letterboxdUsername, StringComparison.OrdinalIgnoreCase));
+                if (single == null)
+                {
+                    _logger.LogWarning("No enabled watchlist-sync account {LbUser} for {Username}",
+                        letterboxdUsername, user.Username);
+                    return false;
+                }
+                accounts = new List<Account> { single };
+            }
+            else
+            {
+                accounts = enabled;
+                if (accounts.Count == 0)
+                {
+                    _logger.LogWarning("No enabled watchlist-sync accounts for {Username}", user.Username);
+                    return false;
+                }
             }
 
             using var jellyseerr = CreateJellyseerrClient();
             SyncProgress.Start("Letterboxd Watchlist", "Starting");
-            await SyncOneUserAsync(user, account, jellyseerr, source, cancellationToken).ConfigureAwait(false);
-            progress.Report(100);
+
+            var processed = 0;
+            foreach (var account in accounts)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await SyncOneUserAsync(user, account, jellyseerr, source, cancellationToken).ConfigureAwait(false);
+                processed++;
+                progress.Report((double)processed / accounts.Count * 100);
+            }
             SyncProgress.Complete();
             return true;
         }
@@ -199,7 +232,7 @@ public class WatchlistSyncRunner
         _logger.LogInformation("Matched {Matched}/{Total} watchlist films to Jellyfin library",
             watchlistItemIds.Count, tmdbIds.Count);
 
-        await UpdatePlaylistAsync(user, watchlistItemIds, tmdbIds.Count).ConfigureAwait(false);
+        await UpdatePlaylistAsync(user, account, watchlistItemIds, tmdbIds.Count).ConfigureAwait(false);
 
         // Jellyseerr integration: auto-request unmatched films and/or mirror the
         // Letterboxd watchlist into the user's Jellyseerr watchlist.
@@ -266,9 +299,12 @@ public class WatchlistSyncRunner
         }
     }
 
-    private async Task UpdatePlaylistAsync(User user, HashSet<Guid> watchlistItemIds, int letterboxdCount)
+    private async Task UpdatePlaylistAsync(User user, Account account, HashSet<Guid> watchlistItemIds, int letterboxdCount)
     {
-        const string playlistName = "Letterboxd Watchlist";
+        // Per-account playlist name so users with multiple Letterboxd accounts on
+        // one Jellyfin user (e.g. shared TV login) each get their own playlist.
+        // Defaults to "Letterboxd Watchlist ({letterboxdUsername})" or the override.
+        var playlistName = account.GetPlaylistName();
 
         var existingPlaylists = _libraryManager.GetItemList(new InternalItemsQuery(user)
         {
