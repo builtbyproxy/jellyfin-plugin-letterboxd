@@ -33,7 +33,7 @@ const featureGroups: FeatureGroup[] = [
     intro: 'All the context around a watch moves between both platforms.',
     visual: 'rating',
     items: [
-      { title: 'Ratings as stars', body: 'Jellyfin 0-10 maps onto Letterboxd 0.5-5.', icon: 'star' },
+      { title: 'Ratings as stars, both ways', body: 'Jellyfin 0-10 maps onto Letterboxd 0.5-5, and ratings flow back too. Films you rated on Letterboxd seed your Jellyfin user rating, even ones you never logged a watch for.', icon: 'star' },
       { title: 'Favorites as likes', body: 'Hearted on Letterboxd when favorited in Jellyfin.', icon: 'heart' },
       { title: 'Watchlist as playlist', body: 'Each user\'s Letterboxd watchlist mirrors into a Jellyfin playlist daily. Films missing from the library get auto-requested through Jellyseerr, attributed to the right user.', icon: 'list' },
       { title: 'Reviews from the dashboard', body: 'Write in Jellyfin, post straight to Letterboxd with rating, spoiler tag, and rewatch flag.', icon: 'pencil' },
@@ -50,6 +50,7 @@ const featureGroups: FeatureGroup[] = [
       { title: 'Smart catch-up', body: 'Already-synced films short-circuit locally with no Letterboxd hit. Previously-failed items retry first when rate limits ease.', icon: 'bolt' },
       { title: 'Cloudflare resilient', body: 'Official API first, scraping fallback, automatic retry.', icon: 'cloud' },
       { title: 'Self-healing auth', body: 'Stale cookies trigger an automatic re-login and retry.', icon: 'refresh' },
+      { title: 'Logs in the dashboard', body: 'Filter by user or text, copy or download. Review text, passwords, and cookies are never logged, so support requests are safe to share.', icon: 'shield' },
     ],
   },
 ];
