@@ -189,6 +189,13 @@
                             <label class="c-muted"><input type="checkbox" id="reviewSpoilers" /> Contains spoilers</label>
                             <label class="c-muted"><input type="checkbox" id="reviewRewatch" /> This is a rewatch</label>
                         </div>
+                        <div id="reviewAccountRow" style="display:none;margin-top:0.7em;">
+                            <label style="display:block;opacity:0.5;font-size:0.85em;margin-bottom:0.2em;">Post as</label>
+                            <select id="reviewAccount" style="min-width:240px;">
+                                <option value="">All my Letterboxd accounts</option>
+                            </select>
+                            <span class="c-muted" style="font-size:0.8em;display:block;margin-top:0.3em;">Defaults to posting on every linked Letterboxd account. Pick one to limit to that account only.</span>
+                        </div>
                         <div id="rewatchDateRow" style="display:none;margin-top:0.5em;">
                             <label style="display:block;opacity:0.5;font-size:0.85em;margin-bottom:0.2em;">Date watched</label>
                             <input type="date" id="reviewDate" style="padding:0.4em;background:rgba(255,255,255,0.06);color:inherit;border:1px solid rgba(255,255,255,0.1);border-radius:4px;" />
@@ -381,9 +388,13 @@
                                 + '<span class="lb-check-title">Only sync recently played films</span>'
                                 + '<span class="lb-check-desc">Limit the catch-up sync to films watched within the last N days (set below). Useful on first run if you don\'t want to backfill years of history into your Letterboxd diary.</span>'
                                 + '</span></label>'
+                                + '<label><input type="checkbox" class="isPrimary" /><span class="lb-check-text">'
+                                + '<span class="lb-check-title">Primary account</span>'
+                                + '<span class="lb-check-desc">When a Jellyfin user has more than one Letterboxd account linked, the primary one wins on rating-import conflicts and is preselected in the review modal. Only one primary per Jellyfin user is kept (the server demotes extras on save).</span>'
+                                + '</span></label>'
                                 + '<label><input type="checkbox" class="enableWatchlistSync" /><span class="lb-check-text">'
                                 + '<span class="lb-check-title">Mirror Letterboxd watchlist as a Jellyfin playlist</span>'
-                                + '<span class="lb-check-desc">Pulls your Letterboxd watchlist daily and mirrors it into a Jellyfin playlist named "Letterboxd Watchlist". Adds new films and removes ones taken off Letterboxd. Films not in your library are skipped.</span>'
+                                + '<span class="lb-check-desc">Pulls your Letterboxd watchlist daily and mirrors it into a Jellyfin playlist. With multiple accounts, each gets its own playlist named "Letterboxd Watchlist (username)" by default. Adds new films and removes ones taken off Letterboxd. Films not in your library are skipped.</span>'
                                 + '</span></label>'
                                 + '<label><input type="checkbox" class="autoRequestWatchlist" /><span class="lb-check-text">'
                                 + '<span class="lb-check-title">Auto-request unmatched watchlist films via Jellyseerr</span>'
@@ -409,6 +420,10 @@
                                 + '<div class="dateFilterDaysContainer" style="display:none;margin-top:0.5em;">'
                                 + '<label class="lb-field">Days to look back</label>'
                                 + '<input type="number" class="dateFilterDays" min="1" max="365" value="7" /></div>'
+                                + '<div style="margin-top:0.5em;">'
+                                + '<label class="lb-field">Watchlist Playlist Name <span class="c-muted">(optional)</span></label>'
+                                + '<input type="text" class="playlistName" placeholder="Letterboxd Watchlist (username)" />'
+                                + '<div class="c-muted" style="font-size:0.8em;margin-top:0.3em;">Override the playlist name for this account\'s mirrored Letterboxd watchlist. Leave blank to use the default pattern.</div></div>'
                                 + '</div>';
                         },
 
@@ -432,6 +447,8 @@
                                 entry.querySelector('.enableDiaryImport').checked = account.EnableDiaryImport === true;
                                 entry.querySelector('.skipPreviouslySynced').checked = account.SkipPreviouslySynced !== false;
                                 entry.querySelector('.stopOnFailure').checked = account.StopOnFailure === true;
+                                entry.querySelector('.isPrimary').checked = account.IsPrimary === true;
+                                entry.querySelector('.playlistName').value = account.PlaylistName || '';
                                 if (account.EnableDateFilter) entry.querySelector('.dateFilterDaysContainer').style.display = '';
                             } else {
                                 entry.querySelector('.accountEnabled').checked = true;
@@ -461,7 +478,9 @@
                                     MirrorJellyseerrWatchlist: entry.querySelector('.mirrorJellyseerrWatchlist').checked,
                                     EnableDiaryImport: entry.querySelector('.enableDiaryImport').checked,
                                     SkipPreviouslySynced: entry.querySelector('.skipPreviouslySynced').checked,
-                                    StopOnFailure: entry.querySelector('.stopOnFailure').checked
+                                    StopOnFailure: entry.querySelector('.stopOnFailure').checked,
+                                    IsPrimary: entry.querySelector('.isPrimary').checked,
+                                    PlaylistName: entry.querySelector('.playlistName').value.trim() || null
                                 });
                             });
                             return accounts;
@@ -472,6 +491,9 @@
                             ApiClient.getUsers().then(function (users) {
                                 self.users = users;
                                 ApiClient.getPluginConfiguration(self.PluginId).then(function (config) {
+                                    // Cache so other tabs (review modal, sync buttons) can read
+                                    // current account state without another round trip.
+                                    self.lastConfig = config;
                                     document.getElementById('accountsList').innerHTML = '';
                                     if (config.Accounts && config.Accounts.length > 0)
                                         config.Accounts.forEach(function (a) { self.addAccount(a); });
@@ -488,6 +510,7 @@
                                 config.JellyseerrUrl = document.getElementById('jellyseerrUrl').value.trim() || null;
                                 config.JellyseerrApiKey = document.getElementById('jellyseerrApiKey').value.trim() || null;
                                 ApiClient.updatePluginConfiguration(self.PluginId, config).then(function () {
+                                    self.lastConfig = config;
                                     Dashboard.processPluginConfigurationUpdateResult();
                                 });
                             });
@@ -707,6 +730,7 @@
                         },
 
                         openReview: function (slug, title, tmdbId) {
+                            var self = this;
                             this.currentSlug = slug;
                             this.currentTmdbId = tmdbId || 0;
                             document.getElementById('reviewTitle').textContent = 'Review: ' + title;
@@ -719,7 +743,37 @@
                             document.getElementById('ratingLabel').textContent = 'No rating';
                             document.querySelectorAll('#starRating span').forEach(function (s) { s.classList.remove('filled'); s.innerHTML = '&#9734;'; });
                             document.getElementById('reviewStatus').textContent = '';
+                            self.populateReviewAccountDropdown();
                             document.getElementById('reviewModal').style.display = 'block';
+                        },
+
+                        // Show the "Post as" row only when the current Jellyfin user has more than
+                        // one enabled Letterboxd account configured. The dropdown's primary account
+                        // is preselected; "All my Letterboxd accounts" stays as the visible default
+                        // value so leaving it untouched fans out to every linked account.
+                        populateReviewAccountDropdown: function () {
+                            var sel = document.getElementById('reviewAccount');
+                            var row = document.getElementById('reviewAccountRow');
+                            if (!sel || !row) return;
+                            sel.innerHTML = '<option value="">All my Letterboxd accounts</option>';
+
+                            ApiClient.getCurrentUser().then(function (user) {
+                                var jfUserId = (user.Id || '').replace(/-/g, '');
+                                var saved = (LB.lastConfig && LB.lastConfig.Accounts) || [];
+                                var mine = saved.filter(function (a) {
+                                    return a.Enabled && a.UserJellyfinId === jfUserId;
+                                });
+                                // Show primary first so the dropdown order matches the rest of the UI.
+                                mine.sort(function (a, b) {
+                                    return (b.IsPrimary ? 1 : 0) - (a.IsPrimary ? 1 : 0);
+                                });
+                                mine.forEach(function (a) {
+                                    var label = a.LetterboxdUsername + (a.IsPrimary ? ' (primary)' : '');
+                                    sel.insertAdjacentHTML('beforeend',
+                                        '<option value="' + (a.LetterboxdUsername || '').replace(/"/g, '&quot;') + '">' + label + '</option>');
+                                });
+                                row.style.display = mine.length >= 2 ? '' : 'none';
+                            });
                         },
 
                         submitReview: function () {
@@ -736,6 +790,10 @@
                             var ratingVal = document.getElementById('reviewRating').value;
                             var rating = ratingVal ? parseFloat(ratingVal) : null;
 
+                            // Empty string => server fans out to every linked account; a username
+                            // => post to that single account only.
+                            var lbUser = (document.getElementById('reviewAccount').value || '').trim();
+
                             ApiClient.ajax({
                                 url: ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/Review'),
                                 type: 'POST', contentType: 'application/json',
@@ -746,7 +804,8 @@
                                     containsSpoilers: document.getElementById('reviewSpoilers').checked,
                                     isRewatch: isRewatch,
                                     date: isRewatch && date ? date : null,
-                                    rating: rating
+                                    rating: rating,
+                                    letterboxdUsername: lbUser || null
                                 })
                             }).then(function (response) {
                                 document.getElementById('reviewSubmit').disabled = false;
