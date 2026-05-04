@@ -12,7 +12,7 @@
         "changelog": "Maintenance: bump GitHub Actions runtime versions (checkout v6, setup-dotnet v5, action-gh-release v3) to remain on a supported Node version. No plugin behaviour changes.",
         "targetAbi": "10.11.0.0",
         "sourceUrl": "https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/releases/download/v1.10.1/jellyfin-plugin-letterboxd-v1.10.1.zip",
-        "checksum": "PLACEHOLDER",
+        "checksum": "c1b34b823027c8416cc52acd49baf77f",
         "timestamp": "2026-05-04T00:00:00Z"
       },
       {
