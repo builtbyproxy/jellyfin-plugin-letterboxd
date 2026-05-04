@@ -46,6 +46,9 @@ public class ScrapingLetterboxdService : ILetterboxdService
     public Task<List<int>> GetDiaryTmdbIdsAsync(string username)
         => _scraper.GetDiaryTmdbIdsAsync(username);
 
+    public Task<List<DiaryFilmEntry>> GetDiaryFilmEntriesAsync(string username)
+        => _scraper.GetDiaryFilmEntriesAsync(username);
+
     public void Dispose()
     {
         _http.Dispose();

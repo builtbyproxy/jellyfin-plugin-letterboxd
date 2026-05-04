@@ -71,13 +71,13 @@ public class DiaryImportTask : IScheduledTask
 
             using var _s = service;
 
-            List<int> diaryTmdbIds;
+            List<DiaryFilmEntry> diaryEntries;
             try
             {
                 SyncProgress.SetPhase("Scanning Letterboxd films");
-                diaryTmdbIds = await service.GetDiaryTmdbIdsAsync(account.LetterboxdUsername).ConfigureAwait(false);
+                diaryEntries = await service.GetDiaryFilmEntriesAsync(account.LetterboxdUsername).ConfigureAwait(false);
                 _logger.LogInformation("Found {Count} films in {Username}'s Letterboxd diary",
-                    diaryTmdbIds.Count, account.LetterboxdUsername);
+                    diaryEntries.Count, account.LetterboxdUsername);
             }
             catch (Exception ex)
             {
@@ -85,19 +85,26 @@ public class DiaryImportTask : IScheduledTask
                 continue;
             }
 
-            if (diaryTmdbIds.Count == 0)
+            if (diaryEntries.Count == 0)
                 continue;
 
-            var unplayedMovies = _libraryManager.GetItemList(new InternalItemsQuery(user)
+            var ratingByTmdbId = diaryEntries
+                .Where(e => e.Rating.HasValue)
+                .ToDictionary(e => e.TmdbId, e => e.Rating!.Value);
+            var diaryTmdbIds = new HashSet<int>(diaryEntries.Select(e => e.TmdbId));
+
+            // Pull all movies (not just unplayed) so we can also apply rating-only updates
+            // to films already marked as played.
+            var allMovies = _libraryManager.GetItemList(new InternalItemsQuery(user)
             {
                 IncludeItemTypes = new[] { BaseItemKind.Movie },
                 IsVirtualItem = false,
-                IsPlayed = false,
                 Recursive = true
             });
 
             var marked = 0;
-            foreach (var movie in unplayedMovies)
+            var ratingsApplied = 0;
+            foreach (var movie in allMovies)
             {
                 var tmdbStr = movie.GetProviderId(MetadataProvider.Tmdb);
                 if (!int.TryParse(tmdbStr, out var tmdbId)) continue;
@@ -107,19 +114,61 @@ public class DiaryImportTask : IScheduledTask
                 var userData = _userDataManager.GetUserData(user, movie);
                 if (userData == null) continue;
 
-                // Only set Played=true, do NOT set LastPlayedDate.
-                // Setting LastPlayedDate would cause SyncTask to re-export this film
-                // back to Letterboxd, creating a sync loop.
-                userData.Played = true;
-                _userDataManager.SaveUserData(user, movie, userData, UserDataSaveReason.Import, cancellationToken);
+                var changed = false;
 
-                _logger.LogInformation("Marked {Title} as played for {Username} (from Letterboxd diary)",
-                    movie.Name, user.Username);
-                marked++;
+                // Mark as played if not already. Do NOT set LastPlayedDate, since that would
+                // cause SyncTask to re-export this film back to Letterboxd (sync loop).
+                if (!userData.Played)
+                {
+                    userData.Played = true;
+                    changed = true;
+                    marked++;
+                    _logger.LogInformation("Marked {Title} as played for {Username} (from Letterboxd diary)",
+                        movie.Name, user.Username);
+                }
+
+                // Apply Letterboxd rating only when Jellyfin doesn't already have one.
+                // Jellyfin has no "rating last modified" timestamp to compare against, so we
+                // use absence-of-rating as the safe signal. Existing ratings (e.g. from
+                // Findroid) are preserved; users who want to overwrite from Letterboxd can
+                // post a review via the plugin dashboard, which always wins.
+                if (ratingByTmdbId.TryGetValue(tmdbId, out var lbRating) &&
+                    (!userData.Rating.HasValue || userData.Rating.Value <= 0))
+                {
+                    var jfRating = Helpers.LetterboxdToJellyfinRating(lbRating);
+                    if (jfRating.HasValue)
+                    {
+                        userData.Rating = jfRating;
+                        changed = true;
+                        ratingsApplied++;
+                        _logger.LogInformation("Imported Letterboxd rating {LbRating} -> Jellyfin {JfRating} for {Title}",
+                            lbRating, jfRating.Value, movie.Name);
+                    }
+                }
+
+                if (changed)
+                {
+                    _userDataManager.SaveUserData(user, movie, userData, UserDataSaveReason.Import, cancellationToken);
+                }
             }
 
-            _logger.LogInformation("Diary import complete for {Username}: {Marked} films marked as played",
-                user.Username, marked);
+            // Count Letterboxd films/ratings we couldn't act on because the user doesn't
+            // have them in their Jellyfin library yet. Useful for surfacing the gap so
+            // users know their LB and JF aren't in full lockstep, and for support logs.
+            var libraryTmdbIds = new HashSet<int>(allMovies
+                .Select(m => m.GetProviderId(MetadataProvider.Tmdb))
+                .Where(s => int.TryParse(s, out _))
+                .Select(s => int.Parse(s!)));
+            var unmatchedFilms = diaryTmdbIds.Count(id => !libraryTmdbIds.Contains(id));
+            var unmatchedRatings = ratingByTmdbId.Count(kv => !libraryTmdbIds.Contains(kv.Key));
+
+            _logger.LogInformation(
+                "Diary import complete for {Username}: {Marked} marked played, {Ratings} ratings imported. " +
+                "Skipped because not in Jellyfin library: {UnmatchedFilms} films ({UnmatchedRatings} of which were rated). " +
+                "Skipped because Jellyfin rating already set: {RatingsHeldByJellyfin}.",
+                user.Username, marked, ratingsApplied,
+                unmatchedFilms, unmatchedRatings,
+                ratingByTmdbId.Count(kv => libraryTmdbIds.Contains(kv.Key)) - ratingsApplied);
             SyncProgress.Complete();
         }
 

@@ -1,9 +1,16 @@
 using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net.Mime;
+using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Data.Enums;
 using LetterboxdSync.Configuration;
+using MediaBrowser.Common.Configuration;
+using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Model.Entities;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -19,17 +26,26 @@ public class LetterboxdController : ControllerBase
 {
     private readonly ILogger<LetterboxdController> _logger;
     private readonly IUserManager _userManager;
+    private readonly ILibraryManager _libraryManager;
+    private readonly IUserDataManager _userDataManager;
+    private readonly IApplicationPaths _appPaths;
     private readonly LetterboxdSyncRunner _syncRunner;
     private readonly WatchlistSyncRunner _watchlistRunner;
 
     public LetterboxdController(
         ILogger<LetterboxdController> logger,
         IUserManager userManager,
+        ILibraryManager libraryManager,
+        IUserDataManager userDataManager,
+        IApplicationPaths appPaths,
         LetterboxdSyncRunner syncRunner,
         WatchlistSyncRunner watchlistRunner)
     {
         _logger = logger;
         _userManager = userManager;
+        _libraryManager = libraryManager;
+        _userDataManager = userDataManager;
+        _appPaths = appPaths;
         _syncRunner = syncRunner;
         _watchlistRunner = watchlistRunner;
     }
@@ -341,6 +357,8 @@ public class LetterboxdController : ControllerBase
             _logger.LogInformation("Posted review for {FilmSlug} by {Username}",
                 request.FilmSlug, account.LetterboxdUsername);
 
+            WriteJellyfinRating(userId, request.TmdbId, request.Rating);
+
             var jellyfinUsername = GetJellyfinUsername() ?? account.LetterboxdUsername;
             var status = request.IsRewatch ? SyncStatus.Rewatch : SyncStatus.Success;
             SyncHistory.Record(new SyncEvent
@@ -372,6 +390,115 @@ public class LetterboxdController : ControllerBase
             });
 
             return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Returns the most recent LetterboxdSync log lines from Jellyfin's log files,
+    /// for in-dashboard debugging and "send me your logs" support flows.
+    /// Reads only LetterboxdSync-tagged lines so users can share without leaking
+    /// unrelated server activity. The plugin already redacts review text and never
+    /// logs auth tokens, passwords, or cookies, so this output is safe to share.
+    /// </summary>
+    [HttpGet("Logs")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public ActionResult GetLogs([FromQuery] int maxLines = 500)
+    {
+        try
+        {
+            var logDir = _appPaths.LogDirectoryPath;
+            if (!Directory.Exists(logDir))
+                return Ok(new { lines = Array.Empty<string>(), source = (string?)null, error = "log directory not found" });
+
+            // Look at the two most recent main log files. Cover the case where the
+            // current file just rolled over and recent activity is in the previous one.
+            var mainLogs = Directory.GetFiles(logDir, "log_*.log")
+                .OrderByDescending(f => f)
+                .Take(2)
+                .ToList();
+
+            if (mainLogs.Count == 0)
+                return Ok(new { lines = Array.Empty<string>(), source = (string?)null, error = "no log files" });
+
+            var lines = new List<string>();
+            foreach (var path in mainLogs.AsEnumerable().Reverse())
+            {
+                using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                using var sr = new StreamReader(fs);
+                string? line;
+                while ((line = sr.ReadLine()) != null)
+                {
+                    if (line.Contains("LetterboxdSync", StringComparison.Ordinal) ||
+                        line.Contains("Letterboxd ", StringComparison.Ordinal))
+                    {
+                        lines.Add(line);
+                    }
+                }
+            }
+
+            // Cap to last N lines so the response stays small.
+            var trimmed = lines.Count > maxLines ? lines.GetRange(lines.Count - maxLines, maxLines) : lines;
+            return Ok(new
+            {
+                lines = trimmed,
+                totalMatches = lines.Count,
+                returned = trimmed.Count,
+                source = string.Join(", ", mainLogs.Select(Path.GetFileName))
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("GetLogs failed: {Message}", ex.Message);
+            return Ok(new { lines = Array.Empty<string>(), source = (string?)null, error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Mirror the dashboard review's star rating into Jellyfin's UserItemData.Rating
+    /// so it survives plugin uninstall and is visible to other clients/plugins.
+    /// Always overwrites: posting a review is the user's latest input, so it wins.
+    /// No-op if the review had no rating, no TmdbId, or the film isn't in the library.
+    /// </summary>
+    private void WriteJellyfinRating(string userId, int? tmdbId, double? letterboxdRating)
+    {
+        if (!tmdbId.HasValue || !letterboxdRating.HasValue)
+            return;
+
+        var jellyfinRating = Helpers.LetterboxdToJellyfinRating(letterboxdRating);
+        if (!jellyfinRating.HasValue)
+            return;
+
+        var user = _userManager.Users.FirstOrDefault(u => u.Id.ToString("N") == userId);
+        if (user == null)
+            return;
+
+        var movie = _libraryManager.GetItemList(new InternalItemsQuery(user)
+        {
+            IncludeItemTypes = new[] { BaseItemKind.Movie },
+            IsVirtualItem = false,
+            Recursive = true
+        }).FirstOrDefault(m => m.GetProviderId(MediaBrowser.Model.Entities.MetadataProvider.Tmdb) == tmdbId.Value.ToString());
+
+        if (movie == null)
+        {
+            _logger.LogDebug("Skipping Jellyfin rating writeback: TMDb {TmdbId} not in library", tmdbId.Value);
+            return;
+        }
+
+        try
+        {
+            var userData = _userDataManager.GetUserData(user, movie);
+            if (userData == null) return;
+
+            userData.Rating = jellyfinRating;
+            _userDataManager.SaveUserData(user, movie, userData, UserDataSaveReason.UpdateUserRating, CancellationToken.None);
+
+            _logger.LogInformation("Mirrored Letterboxd rating {LbRating} -> Jellyfin {JfRating} for {Title} ({UserId})",
+                letterboxdRating.Value, jellyfinRating.Value, movie.Name, userId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("Failed to write Jellyfin rating for TMDb {TmdbId}: {Message}", tmdbId.Value, ex.Message);
         }
     }
 }
