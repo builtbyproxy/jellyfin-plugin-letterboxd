@@ -12,7 +12,7 @@
         "changelog": "Fix: watchlisting a TV show on Letterboxd no longer auto-requests an unrelated movie in Jellyseerr. TMDb has independent ID namespaces for movies and TV (e.g. tv/198102 = Hijack, movie/198102 = Cutie Honey Flash), and the link extractor was treating every tmdb link as a movie ID. Now skips links whose URL points at /tv/. Adds regression coverage for the mismatch.",
         "targetAbi": "10.11.0.0",
         "sourceUrl": "https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/releases/download/v1.11.1/jellyfin-plugin-letterboxd-v1.11.1.zip",
-        "checksum": "PLACEHOLDER",
+        "checksum": "62b29e2a46aff18866c2c7630b94c448",
         "timestamp": "2026-05-05T00:00:00Z"
       },
       {
