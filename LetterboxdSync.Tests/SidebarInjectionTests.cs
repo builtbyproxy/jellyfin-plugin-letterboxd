@@ -1,7 +1,77 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using LetterboxdSync;
+using MediaBrowser.Model.Tasks;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace LetterboxdSync.Tests;
+
+public class SidebarInjectionTaskTests
+{
+    [Fact]
+    public void Metadata_NameKeyDescriptionCategory_AreSet()
+    {
+        var task = new SidebarInjectionTask(NullLogger<SidebarInjectionTask>.Instance);
+
+        Assert.Equal("Letterboxd Sidebar Registration", task.Name);
+        Assert.Equal("LetterboxdSidebarInjection", task.Key);
+        Assert.False(string.IsNullOrEmpty(task.Description));
+        Assert.False(string.IsNullOrEmpty(task.Category));
+    }
+
+    [Fact]
+    public void GetDefaultTriggers_IsStartupTrigger()
+    {
+        var task = new SidebarInjectionTask(NullLogger<SidebarInjectionTask>.Instance);
+
+        var triggers = task.GetDefaultTriggers().ToList();
+
+        Assert.Single(triggers);
+        Assert.Equal(TaskTriggerInfoType.StartupTrigger, triggers[0].Type);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_FileTransformationNotPresent_CompletesWithoutThrowing()
+    {
+        // Test environment doesn't load File Transformation, so the registration
+        // logic falls into the early-exit "plugin not installed" debug-log path
+        // and ExecuteAsync completes cleanly with progress 100.
+        var task = new SidebarInjectionTask(NullLogger<SidebarInjectionTask>.Instance);
+
+        await task.ExecuteAsync(new Progress<double>(), CancellationToken.None);
+        // No exception = pass.
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ReportsProgressTo100()
+    {
+        var task = new SidebarInjectionTask(NullLogger<SidebarInjectionTask>.Instance);
+        // Use a custom IProgress<T> impl that records synchronously instead of
+        // Progress<T> which dispatches via SynchronizationContext (flaky under parallel test).
+        var captured = new SynchronizedRecorder<double>();
+
+        await task.ExecuteAsync(captured, CancellationToken.None);
+
+        Assert.Contains(10.0, captured.Values);
+        Assert.Contains(100.0, captured.Values);
+    }
+
+    /// <summary>
+    /// Simple synchronous IProgress&lt;T&gt; recorder. Avoids the SynchronizationContext
+    /// dispatch that Progress&lt;T&gt; does, which can race under xUnit's parallel runner.
+    /// </summary>
+    private class SynchronizedRecorder<T> : IProgress<T>
+    {
+        private readonly object _lock = new();
+        private readonly List<T> _values = new();
+        public IReadOnlyList<T> Values { get { lock (_lock) return _values.ToList(); } }
+        public void Report(T value) { lock (_lock) _values.Add(value); }
+    }
+}
 
 public class SidebarTransformTests
 {

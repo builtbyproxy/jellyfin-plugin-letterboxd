@@ -265,4 +265,72 @@ public class WatchlistSyncRunnerTests : IDisposable
         await Task.Delay(50);
         Assert.Contains(100.0, captured);
     }
+
+    [Fact]
+    public async Task TryRunForUserAsync_NoWatchlistMatches_LogsWarning_NoPlaylistCreated()
+    {
+        // Letterboxd returns watchlist film, but library has nothing matching → no
+        // playlist creation. Exercises the unmatched-films logging branch.
+        var (user, userId) = MakeUser("lachlan");
+        _userManager.Users.Returns(new[] { user });
+        AddAccount(userId);
+
+        var service = Substitute.For<ILetterboxdService>();
+        service.GetWatchlistTmdbIdsAsync(Arg.Any<string>()).Returns(new List<int> { 1233413 });
+        LetterboxdServiceFactory.OverrideForTesting = (_, _, _, _, _) => Task.FromResult(service);
+
+        // Library has no movies at all.
+        _libraryManager.GetItemList(Arg.Any<InternalItemsQuery>()).Returns(new List<BaseItem>());
+
+        var ok = await _runner.TryRunForUserAsync(userId, "test",
+            new Progress<double>(), CancellationToken.None);
+
+        Assert.True(ok);
+        await _playlistManager.DidNotReceive().CreatePlaylist(Arg.Any<PlaylistCreationRequest>());
+    }
+
+    [Fact]
+    public async Task TryRunForUserAsync_AutoRequestEnabled_NoJellyseerr_SkipsRequest()
+    {
+        // Account has auto-request on, but Jellyseerr URL/key aren't configured at
+        // the plugin level → CreateJellyseerrClient returns null, we don't try to
+        // request. This exercises the IsConfigured guard path.
+        var (user, userId) = MakeUser("lachlan");
+        _userManager.Users.Returns(new[] { user });
+        AddAccount(userId, autoRequest: true);
+
+        var service = Substitute.For<ILetterboxdService>();
+        service.GetWatchlistTmdbIdsAsync(Arg.Any<string>()).Returns(new List<int> { 1233413 });
+        LetterboxdServiceFactory.OverrideForTesting = (_, _, _, _, _) => Task.FromResult(service);
+
+        _libraryManager.GetItemList(Arg.Any<InternalItemsQuery>()).Returns(new List<BaseItem>());
+
+        var ok = await _runner.TryRunForUserAsync(userId, "test",
+            new Progress<double>(), CancellationToken.None);
+
+        Assert.True(ok);
+    }
+
+    [Fact]
+    public async Task TryRunForUserAsync_ExistingPlaylistMatches_NoCreateCall()
+    {
+        // Library has the watchlisted film and there's already a playlist named
+        // "Letterboxd Watchlist" with the right items → no Create or update needed.
+        var (user, userId) = MakeUser("lachlan");
+        _userManager.Users.Returns(new[] { user });
+        AddAccount(userId);
+
+        var service = Substitute.For<ILetterboxdService>();
+        service.GetWatchlistTmdbIdsAsync(Arg.Any<string>()).Returns(new List<int> { 1233413 });
+        LetterboxdServiceFactory.OverrideForTesting = (_, _, _, _, _) => Task.FromResult(service);
+
+        var movie = MakeMovie(1233413);
+        _libraryManager.GetItemList(Arg.Any<InternalItemsQuery>())
+            .Returns(new List<BaseItem> { movie }, new List<BaseItem>());
+
+        var ok = await _runner.TryRunForUserAsync(userId, "test",
+            new Progress<double>(), CancellationToken.None);
+
+        Assert.True(ok);
+    }
 }

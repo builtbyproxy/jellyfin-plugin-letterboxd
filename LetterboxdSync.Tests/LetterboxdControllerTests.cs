@@ -5,6 +5,7 @@ using LetterboxdSync;
 using LetterboxdSync.Api;
 using LetterboxdSync.Configuration;
 using Microsoft.AspNetCore.Mvc;
+using NSubstitute;
 using Xunit;
 
 namespace LetterboxdSync.Tests;
@@ -375,6 +376,95 @@ public class LetterboxdControllerTests
 
         Assert.IsType<BadRequestObjectResult>(result);
         Assert.Contains("No Letterboxd account configured", Prop<string>(result, "error") ?? string.Empty);
+    }
+
+    [Fact]
+    public async Task PostReview_SuccessfulFlow_ReturnsOkAndCallsService()
+    {
+        using var h = new ControllerTestHarness(currentUserId: UserId);
+        h.AddAccount(UserId, "8bitproxy");
+
+        var service = NSubstitute.Substitute.For<ILetterboxdService>();
+        LetterboxdServiceFactory.OverrideForTesting = (_, _, _, _, _) => System.Threading.Tasks.Task.FromResult(service);
+        try
+        {
+            var result = await h.Controller.PostReview(new ReviewRequest
+            {
+                FilmSlug = "sinners",
+                ReviewText = "great",
+                Rating = 4.5,
+                TmdbId = 1233413
+            });
+
+            Assert.IsType<OkObjectResult>(result);
+            Assert.True(Prop<bool>(result, "success"));
+            await service.Received(1).PostReviewAsync(
+                "sinners", "great", false, false, null, 4.5, 1233413);
+        }
+        finally
+        {
+            LetterboxdServiceFactory.OverrideForTesting = null;
+        }
+    }
+
+    [Fact]
+    public async Task PostReview_ServiceThrows_ReturnsBadRequestWithError()
+    {
+        using var h = new ControllerTestHarness(currentUserId: UserId);
+        h.AddAccount(UserId, "8bitproxy");
+
+        var service = NSubstitute.Substitute.For<ILetterboxdService>();
+        service.When(s => s.PostReviewAsync(
+            NSubstitute.Arg.Any<string>(), NSubstitute.Arg.Any<string?>(),
+            NSubstitute.Arg.Any<bool>(), NSubstitute.Arg.Any<bool>(),
+            NSubstitute.Arg.Any<string?>(), NSubstitute.Arg.Any<double?>(),
+            NSubstitute.Arg.Any<int?>())).Do(_ => throw new System.Exception("Cloudflare 403"));
+        LetterboxdServiceFactory.OverrideForTesting = (_, _, _, _, _) => System.Threading.Tasks.Task.FromResult(service);
+        try
+        {
+            var result = await h.Controller.PostReview(new ReviewRequest
+            {
+                FilmSlug = "sinners",
+                ReviewText = "great",
+                TmdbId = 1233413
+            });
+
+            Assert.IsType<BadRequestObjectResult>(result);
+            Assert.Contains("Cloudflare", Prop<string>(result, "error") ?? string.Empty);
+        }
+        finally
+        {
+            LetterboxdServiceFactory.OverrideForTesting = null;
+        }
+    }
+
+    [Fact]
+    public async Task PostReview_RewatchWithoutText_AllowedThroughValidation()
+    {
+        using var h = new ControllerTestHarness(currentUserId: UserId);
+        h.AddAccount(UserId, "8bitproxy");
+
+        var service = NSubstitute.Substitute.For<ILetterboxdService>();
+        LetterboxdServiceFactory.OverrideForTesting = (_, _, _, _, _) => System.Threading.Tasks.Task.FromResult(service);
+        try
+        {
+            var result = await h.Controller.PostReview(new ReviewRequest
+            {
+                FilmSlug = "sinners",
+                ReviewText = null,
+                IsRewatch = true,
+                TmdbId = 1233413
+            });
+
+            Assert.IsType<OkObjectResult>(result);
+            await service.Received(1).PostReviewAsync(
+                "sinners", null, false, true,
+                NSubstitute.Arg.Any<string?>(), NSubstitute.Arg.Any<double?>(), 1233413);
+        }
+        finally
+        {
+            LetterboxdServiceFactory.OverrideForTesting = null;
+        }
     }
 
     // ----- TestConnection -----
