@@ -201,6 +201,105 @@ public class JellyseerrClientTests
     }
 
     [Fact]
+    public async Task GetJellyseerrUserIdAsync_FoundOnFirstPage_ReturnsId()
+    {
+        // The user-id mapping endpoint paginates with take/skip. First call returns
+        // a couple of mapped users, second call returns an empty list to terminate.
+        int callCount = 0;
+        var handler = new SeerrHandler(req =>
+        {
+            callCount++;
+            if (callCount == 1)
+                return JsonResponse(@"{ ""results"": [
+                    { ""id"": 1, ""jellyfinUserId"": ""abc123"" },
+                    { ""id"": 7, ""jellyfinUserId"": ""def456"" }
+                ] }");
+            return JsonResponse(@"{ ""results"": [] }");
+        });
+
+        using var client = new JellyseerrClient(BaseUrl, ApiKey, NullLogger.Instance, handler);
+        var id = await client.GetJellyseerrUserIdAsync("def456");
+
+        Assert.Equal(7, id);
+    }
+
+    [Fact]
+    public async Task GetJellyseerrUserIdAsync_NormalisesDashesAndCase()
+    {
+        // Map stores normalised IDs (no dashes, lowercase). Looking up the same user
+        // via either format should resolve to the same Jellyseerr user id.
+        var handler = new SeerrHandler(req =>
+            JsonResponse(@"{ ""results"": [{ ""id"": 42, ""jellyfinUserId"": ""ABC123"" }] }"));
+
+        using var client = new JellyseerrClient(BaseUrl, ApiKey, NullLogger.Instance, handler);
+
+        Assert.Equal(42, await client.GetJellyseerrUserIdAsync("ABC123"));
+        Assert.Equal(42, await client.GetJellyseerrUserIdAsync("abc-1-2-3"));
+        Assert.Equal(42, await client.GetJellyseerrUserIdAsync("abc123"));
+    }
+
+    [Fact]
+    public async Task GetJellyseerrUserIdAsync_UnknownUser_ReturnsNull()
+    {
+        var handler = new SeerrHandler(req =>
+            JsonResponse(@"{ ""results"": [{ ""id"": 1, ""jellyfinUserId"": ""onlyuser"" }] }"));
+
+        using var client = new JellyseerrClient(BaseUrl, ApiKey, NullLogger.Instance, handler);
+        Assert.Null(await client.GetJellyseerrUserIdAsync("missing"));
+    }
+
+    [Fact]
+    public async Task GetJellyseerrUserIdAsync_PaginatesUntilEmpty()
+    {
+        // Should walk pages of size 100 until an empty results array signals the end.
+        // 250 users → page 0 (100), page 1 (100), page 2 (50), page 3 (empty stop).
+        int callCount = 0;
+        var handler = new SeerrHandler(req =>
+        {
+            callCount++;
+            if (callCount <= 3)
+            {
+                var items = string.Join(",",
+                    System.Linq.Enumerable.Range(0, callCount == 3 ? 50 : 100)
+                        .Select(i => $"{{\"id\":{(callCount - 1) * 100 + i + 1},\"jellyfinUserId\":\"u{(callCount - 1) * 100 + i + 1}\"}}"));
+                return JsonResponse($"{{ \"results\": [{items}] }}");
+            }
+            return JsonResponse(@"{ ""results"": [] }");
+        });
+
+        using var client = new JellyseerrClient(BaseUrl, ApiKey, NullLogger.Instance, handler);
+
+        Assert.Equal(1, await client.GetJellyseerrUserIdAsync("u1"));
+        Assert.Equal(150, await client.GetJellyseerrUserIdAsync("u150"));
+        Assert.Equal(250, await client.GetJellyseerrUserIdAsync("u250"));
+        Assert.Null(await client.GetJellyseerrUserIdAsync("u9999"));
+
+        // After the first lookup the map is cached on the client; subsequent lookups
+        // shouldn't issue more HTTP calls. The pagination short-circuits when a page
+        // returns fewer than `take` results, so we don't need a fourth empty call —
+        // total = 3 paged calls.
+        Assert.Equal(3, callCount);
+    }
+
+    [Fact]
+    public async Task GetJellyseerrUserIdAsync_SkipsResultsWithoutJellyfinId()
+    {
+        // Jellyseerr admin accounts can have a null jellyfinUserId; they shouldn't
+        // appear in the map. Looking up a real user should still work.
+        var handler = new SeerrHandler(_ =>
+            JsonResponse(@"{ ""results"": [
+                { ""id"": 1 },
+                { ""id"": 2, ""jellyfinUserId"": null },
+                { ""id"": 3, ""jellyfinUserId"": """" },
+                { ""id"": 4, ""jellyfinUserId"": ""real"" }
+            ] }"));
+
+        using var client = new JellyseerrClient(BaseUrl, ApiKey, NullLogger.Instance, handler);
+        Assert.Equal(4, await client.GetJellyseerrUserIdAsync("real"));
+        Assert.Null(await client.GetJellyseerrUserIdAsync("nonexistent"));
+    }
+
+    [Fact]
     public async Task AddToWatchlistAsync_409Conflict_IsTreatedAsSuccess()
     {
         var handler = new SeerrHandler(_ => new HttpResponseMessage(HttpStatusCode.Conflict)
