@@ -1,0 +1,48 @@
+# Codecov config. See https://docs.codecov.com/docs/codecov-yaml
+#
+# We optimise for "coverage as a signal" rather than "coverage as a blocker":
+# new code on a PR should generally have a test, but small dips on the project
+# total don't fail CI. Codecov posts a comment with diff coverage on every PR.
+
+codecov:
+  require_ci_to_pass: true
+  notify:
+    wait_for_ci: true
+
+coverage:
+  precision: 1
+  round: nearest
+  range: "60...90"
+
+  status:
+    project:
+      default:
+        # Project-wide coverage target. `auto` means "match the previous commit"
+        # so we don't reject PRs that hold the line. 1% threshold lets refactors
+        # through without forcing churn on covered code.
+        target: auto
+        threshold: 1%
+        informational: false
+        only_pulls: false
+    patch:
+      default:
+        # Coverage of the lines this PR adds/changes. New code should be tested
+        # but we tolerate small misses (test setup, error paths) below 70%.
+        target: 70%
+        threshold: 5%
+        informational: false
+
+comment:
+  layout: "reach, diff, flags, files"
+  behavior: default
+  require_changes: false
+
+# Don't penalise the project total for code that's intentionally untested:
+#  - Web/ contains embedded HTML/JS resources, not C#
+#  - bin/ and obj/ are build artifacts
+#  - .Tests/ shouldn't measure its own coverage
+ignore:
+  - "**/bin/**"
+  - "**/obj/**"
+  - "LetterboxdSync/Web/**"
+  - "LetterboxdSync.Tests/**"
