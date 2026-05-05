@@ -317,6 +317,9 @@ public class LetterboxdApiClient : ILetterboxdService
     /// Pull TMDb ID from a FilmSummary's `links` array.
     /// FilmSummary uses `links: [{type:"tmdb", id:"123"}, ...]` rather than a
     /// nested `film` object with provider IDs (which is what /log-entries returns).
+    /// Skips TV-show TMDb links: TMDb has separate ID namespaces for movies
+    /// and TV, so e.g. tv/198102 (Hijack, BBC drama) collides with movie/198102
+    /// (Cutie Honey Flash). The watchlist/diary syncs target movies only.
     /// </summary>
     internal static int? ExtractTmdbIdFromLinks(JsonElement film)
     {
@@ -327,6 +330,12 @@ public class LetterboxdApiClient : ILetterboxdService
         {
             if (!link.TryGetProperty("type", out var type)) continue;
             if (!string.Equals(type.GetString(), "tmdb", StringComparison.OrdinalIgnoreCase)) continue;
+
+            if (link.TryGetProperty("url", out var urlEl) &&
+                urlEl.GetString() is string url &&
+                url.Contains("/tv/", StringComparison.Ordinal))
+                continue;
+
             if (!link.TryGetProperty("id", out var idEl)) continue;
             if (int.TryParse(idEl.GetString(), out var id)) return id;
         }
@@ -495,23 +504,7 @@ public class LetterboxdApiClient : ILetterboxdService
         return string.Empty;
     }
 
-    private static int? ExtractTmdbId(JsonElement film)
-    {
-        if (film.TryGetProperty("links", out var links))
-        {
-            foreach (var link in links.EnumerateArray())
-            {
-                if (link.TryGetProperty("type", out var type) && type.GetString() == "tmdb" &&
-                    link.TryGetProperty("id", out var id))
-                {
-                    if (int.TryParse(id.GetString(), out var tmdbId))
-                        return tmdbId;
-                }
-            }
-        }
-
-        return null;
-    }
+    private static int? ExtractTmdbId(JsonElement film) => ExtractTmdbIdFromLinks(film);
 
     internal record TokenInfo(string AccessToken, string RefreshToken, DateTime ExpiresAtUtc, string MemberId);
 }
