@@ -333,4 +333,198 @@ public class WatchlistSyncRunnerTests : IDisposable
 
         Assert.True(ok);
     }
+
+    // ----- Mirror to Jellyseerr watchlist -----
+    // Exercises MirrorJellyseerrWatchlistAsync via the JellyseerrClientFactoryOverride.
+
+    /// <summary>
+    /// Mock HttpMessageHandler that lets us drive the JellyseerrClient end-to-end
+    /// without hitting the network. Each test plays out a small request → response
+    /// script so we can verify the runner sends the right calls.
+    /// </summary>
+    private class JellyseerrHandler : System.Net.Http.HttpMessageHandler
+    {
+        private readonly Func<System.Net.Http.HttpRequestMessage, System.Net.Http.HttpResponseMessage> _responder;
+        public List<System.Net.Http.HttpRequestMessage> Calls { get; } = new();
+        public JellyseerrHandler(Func<System.Net.Http.HttpRequestMessage, System.Net.Http.HttpResponseMessage> responder)
+            => _responder = responder;
+        protected override Task<System.Net.Http.HttpResponseMessage> SendAsync(
+            System.Net.Http.HttpRequestMessage request, CancellationToken ct)
+        {
+            Calls.Add(request);
+            return Task.FromResult(_responder(request));
+        }
+    }
+
+    [Fact]
+    public async Task TryRunForUserAsync_MirrorWatchlist_AddsMissingFilms()
+    {
+        var (user, userId) = MakeUser("lachlan");
+        _userManager.Users.Returns(new[] { user });
+        AddAccount(userId, mirror: true);
+
+        // Plugin-wide Jellyseerr config makes IsConfigured true.
+        Plugin.Instance!.Configuration.JellyseerrUrl = "http://jellyseerr.test";
+        Plugin.Instance!.Configuration.JellyseerrApiKey = "key";
+
+        var service = Substitute.For<ILetterboxdService>();
+        // LB has only 1233413; Jellyseerr has 550. Mirror should ADD 1233413 and
+        // REMOVE 550 from the Seerr watchlist (since it's no longer on LB).
+        service.GetWatchlistTmdbIdsAsync(Arg.Any<string>())
+            .Returns(new List<int> { 1233413 });
+        LetterboxdServiceFactory.OverrideForTesting = (_, _, _, _, _) => Task.FromResult(service);
+
+        // Library has nothing (so playlist+request paths short-circuit), but the
+        // mirror flow still runs since Jellyseerr is configured + mirror flag is on.
+        _libraryManager.GetItemList(Arg.Any<InternalItemsQuery>()).Returns(new List<BaseItem>());
+
+        // Jellyseerr scripted responses:
+        //   GET /api/v1/user → maps lachlan's JF id to Jellyseerr id 7
+        //   GET /api/v1/user/7/watchlist → returns {550}, missing 1233413
+        //   POST /api/v1/watchlist (with X-API-User: 7) → success for 1233413
+        //   DELETE /api/v1/watchlist/550 → success (550 was on Seerr but not LB)
+        var handler = new JellyseerrHandler(req =>
+        {
+            var path = req.RequestUri!.AbsolutePath;
+            if (req.Method == HttpMethod.Get && path.EndsWith("/api/v1/user"))
+            {
+                var jfId = user.Id.ToString("N");
+                return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                {
+                    Content = new System.Net.Http.StringContent(
+                        "{\"results\":[{\"id\":7,\"jellyfinUserId\":\"" + jfId + "\"}]}")
+                };
+            }
+            if (req.Method == HttpMethod.Get && path.Contains("/api/v1/user/7/watchlist"))
+            {
+                // Jellyseerr's watchlist endpoint returns items with tmdbId at the
+                // top level; not nested under mediaInfo.
+                return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                {
+                    Content = new System.Net.Http.StringContent(
+                        "{\"results\":[{\"tmdbId\":550,\"mediaType\":\"movie\"}]}")
+                };
+            }
+            if (req.Method == HttpMethod.Post && path.EndsWith("/api/v1/watchlist"))
+                return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.Created);
+            if (req.Method == HttpMethod.Delete && path.StartsWith("/api/v1/watchlist/"))
+                return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.NoContent);
+            return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.NotFound);
+        });
+
+        WatchlistSyncRunner.JellyseerrClientFactoryOverride = (url, key, log) =>
+            new JellyseerrClient(url, key, log, handler);
+        try
+        {
+            var ok = await _runner.TryRunForUserAsync(userId, "test",
+                new Progress<double>(), CancellationToken.None);
+
+            Assert.True(ok);
+            // Should have hit the user list, watchlist fetch, plus add and remove.
+            Assert.Contains(handler.Calls, r => r.Method == HttpMethod.Get && r.RequestUri!.AbsolutePath.EndsWith("/api/v1/user"));
+            Assert.Contains(handler.Calls, r => r.Method == HttpMethod.Get && r.RequestUri!.AbsolutePath.Contains("/api/v1/user/7/watchlist"));
+            Assert.Contains(handler.Calls, r => r.Method == HttpMethod.Post && r.RequestUri!.AbsolutePath.EndsWith("/api/v1/watchlist"));
+            Assert.Contains(handler.Calls, r => r.Method == HttpMethod.Delete);
+        }
+        finally
+        {
+            WatchlistSyncRunner.JellyseerrClientFactoryOverride = null;
+            Plugin.Instance!.Configuration.JellyseerrUrl = null;
+            Plugin.Instance!.Configuration.JellyseerrApiKey = null;
+        }
+    }
+
+    [Fact]
+    public async Task TryRunForUserAsync_MirrorWatchlist_NoUserMapping_SkipsMirror()
+    {
+        var (user, userId) = MakeUser("lachlan");
+        _userManager.Users.Returns(new[] { user });
+        AddAccount(userId, mirror: true);
+
+        Plugin.Instance!.Configuration.JellyseerrUrl = "http://jellyseerr.test";
+        Plugin.Instance!.Configuration.JellyseerrApiKey = "key";
+
+        var service = Substitute.For<ILetterboxdService>();
+        service.GetWatchlistTmdbIdsAsync(Arg.Any<string>()).Returns(new List<int> { 1233413 });
+        LetterboxdServiceFactory.OverrideForTesting = (_, _, _, _, _) => Task.FromResult(service);
+        _libraryManager.GetItemList(Arg.Any<InternalItemsQuery>()).Returns(new List<BaseItem>());
+
+        // Jellyseerr returns a user list that doesn't match our Jellyfin user → mapping fails.
+        var handler = new JellyseerrHandler(req =>
+            new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new System.Net.Http.StringContent("{\"results\":[]}")
+            });
+        WatchlistSyncRunner.JellyseerrClientFactoryOverride = (url, key, log) =>
+            new JellyseerrClient(url, key, log, handler);
+        try
+        {
+            var ok = await _runner.TryRunForUserAsync(userId, "test",
+                new Progress<double>(), CancellationToken.None);
+
+            Assert.True(ok);
+            // Without a mapping, the mirror flow must not POST/DELETE anything.
+            Assert.DoesNotContain(handler.Calls, r => r.Method == HttpMethod.Post);
+            Assert.DoesNotContain(handler.Calls, r => r.Method == HttpMethod.Delete);
+        }
+        finally
+        {
+            WatchlistSyncRunner.JellyseerrClientFactoryOverride = null;
+            Plugin.Instance!.Configuration.JellyseerrUrl = null;
+            Plugin.Instance!.Configuration.JellyseerrApiKey = null;
+        }
+    }
+
+    [Fact]
+    public async Task TryRunForUserAsync_MirrorWatchlist_EmptyLetterboxdList_SkipsToAvoidMassDeletion()
+    {
+        // Defensive: if Letterboxd returns an empty list (e.g. watchlist deleted
+        // or fetch errored to zero), don't mass-delete the Jellyseerr watchlist.
+        var (user, userId) = MakeUser("lachlan");
+        _userManager.Users.Returns(new[] { user });
+        AddAccount(userId, mirror: true);
+
+        Plugin.Instance!.Configuration.JellyseerrUrl = "http://jellyseerr.test";
+        Plugin.Instance!.Configuration.JellyseerrApiKey = "key";
+
+        var service = Substitute.For<ILetterboxdService>();
+        service.GetWatchlistTmdbIdsAsync(Arg.Any<string>()).Returns(new List<int>());
+        LetterboxdServiceFactory.OverrideForTesting = (_, _, _, _, _) => Task.FromResult(service);
+        _libraryManager.GetItemList(Arg.Any<InternalItemsQuery>()).Returns(new List<BaseItem>());
+
+        var handler = new JellyseerrHandler(req =>
+        {
+            var path = req.RequestUri!.AbsolutePath;
+            if (req.Method == HttpMethod.Get && path.EndsWith("/api/v1/user"))
+            {
+                return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                {
+                    Content = new System.Net.Http.StringContent(
+                        "{\"results\":[{\"id\":7,\"jellyfinUserId\":\"" + user.Id.ToString("N") + "\"}]}")
+                };
+            }
+            return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new System.Net.Http.StringContent("{\"results\":[]}")
+            };
+        });
+        WatchlistSyncRunner.JellyseerrClientFactoryOverride = (url, key, log) =>
+            new JellyseerrClient(url, key, log, handler);
+        try
+        {
+            var ok = await _runner.TryRunForUserAsync(userId, "test",
+                new Progress<double>(), CancellationToken.None);
+
+            Assert.True(ok);
+            // No add or delete — empty LB means no mirror operations.
+            Assert.DoesNotContain(handler.Calls, r => r.Method == HttpMethod.Post);
+            Assert.DoesNotContain(handler.Calls, r => r.Method == HttpMethod.Delete);
+        }
+        finally
+        {
+            WatchlistSyncRunner.JellyseerrClientFactoryOverride = null;
+            Plugin.Instance!.Configuration.JellyseerrUrl = null;
+            Plugin.Instance!.Configuration.JellyseerrApiKey = null;
+        }
+    }
 }

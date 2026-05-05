@@ -35,12 +35,28 @@ public static class SyncHistory
     private static List<SyncEvent>? _events;
     private static ILogger? _logger;
 
+    /// <summary>
+    /// Test-only hook for the JSONL file location, plus a way to clear the in-memory
+    /// list between tests. Production never assigns these; the default DataPath logic
+    /// uses the plugin's configurations directory.
+    /// </summary>
+    internal static string? DataPathOverride { get; set; }
+
+    /// <summary>Test hook: drop the in-memory cache so the next access re-reads from disk.</summary>
+    internal static void ResetForTesting()
+    {
+        lock (_lock) { _events = null; }
+    }
+
     public static void SetLogger(ILogger logger) => _logger = logger;
 
     private static string DataPath
     {
         get
         {
+            if (!string.IsNullOrEmpty(DataPathOverride))
+                return DataPathOverride!;
+
             var assembly = typeof(SyncHistory).Assembly.Location;
             var pluginDir = Path.GetDirectoryName(assembly);
             if (!string.IsNullOrEmpty(pluginDir))
