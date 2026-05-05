@@ -54,7 +54,9 @@ public class PlaybackHandler : IHostedService, IDisposable
         }
     }
 
-    private async Task HandlePlaybackStoppedAsync(PlaybackStopEventArgs e)
+    // internal (not private) so tests can drive the handler without going through
+    // the ISessionManager event raise machinery; production callers still go via OnPlaybackStopped.
+    internal async Task HandlePlaybackStoppedAsync(PlaybackStopEventArgs e)
     {
         if (e.Item == null || !e.Item.IsMovie())
             return;
