@@ -66,6 +66,62 @@ public class FilmSummaryHelperTests
         Assert.Null(LetterboxdApiClient.ExtractTmdbIdFromLinks(film));
     }
 
+    // Regression: Letterboxd's API returns the same FilmSummary shape for TV-show
+    // entries, with the tmdb link pointing at /tv/<id>. TMDb's movie and TV ID
+    // namespaces are independent, so e.g. tv/198102 = "Hijack" and movie/198102 =
+    // "Cutie Honey Flash". Without the /tv/ guard, watchlisting Hijack on
+    // Letterboxd ends up auto-requesting Cutie Honey in Jellyseerr.
+    [Fact]
+    public void ExtractTmdbIdFromLinks_TvShow_SkipsTvLink()
+    {
+        var film = Parse(@"{
+            ""name"": ""Hijack"",
+            ""links"": [
+                { ""type"": ""letterboxd"", ""id"": ""HykO"", ""url"": ""https://letterboxd.com/film/hijack-2023/"" },
+                { ""type"": ""imdb"", ""id"": ""tt19854762"", ""url"": ""https://www.imdb.com/title/tt19854762/"" },
+                { ""type"": ""tmdb"", ""id"": ""198102"", ""url"": ""https://www.themoviedb.org/tv/198102"" }
+            ]
+        }");
+
+        Assert.Null(LetterboxdApiClient.ExtractTmdbIdFromLinks(film));
+    }
+
+    [Fact]
+    public void ExtractTmdbIdFromLinks_MovieUrl_ReturnsId()
+    {
+        var film = Parse(@"{
+            ""links"": [
+                { ""type"": ""tmdb"", ""id"": ""1233413"", ""url"": ""https://www.themoviedb.org/movie/1233413"" }
+            ]
+        }");
+
+        Assert.Equal(1233413, LetterboxdApiClient.ExtractTmdbIdFromLinks(film));
+    }
+
+    [Fact]
+    public void ExtractTmdbIdFromLinks_TmdbWithNoUrl_StillReturnsId()
+    {
+        // Older API responses sometimes omit `url`; without it we have no way to
+        // disambiguate, so fall back to returning the id (caller's existing
+        // movie-namespace assumption).
+        var film = Parse(@"{ ""links"": [ { ""type"": ""tmdb"", ""id"": ""550"" } ] }");
+        Assert.Equal(550, LetterboxdApiClient.ExtractTmdbIdFromLinks(film));
+    }
+
+    [Fact]
+    public void ExtractTmdbIdFromLinks_MixedTvAndMovieLinks_PrefersMovie()
+    {
+        // Defensive: if the API ever returns both, take the movie one.
+        var film = Parse(@"{
+            ""links"": [
+                { ""type"": ""tmdb"", ""id"": ""198102"", ""url"": ""https://www.themoviedb.org/tv/198102"" },
+                { ""type"": ""tmdb"", ""id"": ""1233413"", ""url"": ""https://www.themoviedb.org/movie/1233413"" }
+            ]
+        }");
+
+        Assert.Equal(1233413, LetterboxdApiClient.ExtractTmdbIdFromLinks(film));
+    }
+
     [Fact]
     public void ExtractMemberRating_PresentRating_ReturnsValue()
     {
