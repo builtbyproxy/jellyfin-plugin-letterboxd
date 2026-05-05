@@ -82,7 +82,7 @@ public class LetterboxdController : ControllerBase
     [ProducesResponseType(StatusCodes.Status202Accepted)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
-    public ActionResult StartSync()
+    public ActionResult StartSync([FromQuery] string? letterboxdUsername = null)
     {
         var userId = GetCurrentUserId();
         if (string.IsNullOrEmpty(userId))
@@ -91,17 +91,26 @@ public class LetterboxdController : ControllerBase
         if (LetterboxdSyncRunner.IsRunning)
             return Conflict(new { error = "Sync already running" });
 
-        var account = Config.Accounts.FirstOrDefault(a => a.Enabled && a.UserJellyfinId == userId);
-        if (account == null)
-            return BadRequest(new { error = "No enabled Letterboxd account is configured for your user" });
+        // When letterboxdUsername is supplied, target only that account. Otherwise the
+        // runner fans out across all enabled accounts for this Jellyfin user.
+        if (!string.IsNullOrEmpty(letterboxdUsername))
+        {
+            if (Config.FindAccount(userId, letterboxdUsername) == null)
+                return BadRequest(new { error = $"No enabled Letterboxd account '{letterboxdUsername}' for your user" });
+        }
+        else if (!Config.GetEnabledAccountsForUser(userId).Any())
+        {
+            return BadRequest(new { error = "No enabled Letterboxd accounts are configured for your user" });
+        }
 
         // Fire and forget. Errors during the run are logged by the runner; the UI polls /Progress.
         _ = Task.Run(async () =>
         {
             try
             {
-                await _syncRunner.TryRunForUserAsync(userId, "manual", new Progress<double>(), System.Threading.CancellationToken.None)
-                    .ConfigureAwait(false);
+                await _syncRunner.TryRunForUserAsync(
+                    userId, "manual", new Progress<double>(), System.Threading.CancellationToken.None,
+                    letterboxdUsername).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -121,7 +130,7 @@ public class LetterboxdController : ControllerBase
     [ProducesResponseType(StatusCodes.Status202Accepted)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
-    public ActionResult StartWatchlistSync()
+    public ActionResult StartWatchlistSync([FromQuery] string? letterboxdUsername = null)
     {
         var userId = GetCurrentUserId();
         if (string.IsNullOrEmpty(userId))
@@ -130,19 +139,29 @@ public class LetterboxdController : ControllerBase
         if (LetterboxdSyncRunner.IsRunning)
             return Conflict(new { error = "Sync already running" });
 
-        var account = Config.Accounts.FirstOrDefault(a => a.Enabled && a.UserJellyfinId == userId);
-        if (account == null)
-            return BadRequest(new { error = "No enabled Letterboxd account is configured for your user" });
-
-        if (!account.EnableWatchlistSync)
-            return BadRequest(new { error = "Watchlist sync is disabled for your account; enable it in Settings first" });
+        // Validate up front so we can return a 400 instead of starting an empty run.
+        if (!string.IsNullOrEmpty(letterboxdUsername))
+        {
+            var account = Config.FindAccount(userId, letterboxdUsername);
+            if (account == null)
+                return BadRequest(new { error = $"No enabled Letterboxd account '{letterboxdUsername}' for your user" });
+            if (!account.EnableWatchlistSync)
+                return BadRequest(new { error = $"Watchlist sync is disabled for '{letterboxdUsername}'; enable it in Settings first" });
+        }
+        else
+        {
+            var enabled = Config.GetEnabledAccountsForUser(userId).Where(a => a.EnableWatchlistSync).ToList();
+            if (enabled.Count == 0)
+                return BadRequest(new { error = "No enabled accounts with watchlist sync turned on for your user" });
+        }
 
         _ = Task.Run(async () =>
         {
             try
             {
-                await _watchlistRunner.TryRunForUserAsync(userId, "manual", new Progress<double>(), System.Threading.CancellationToken.None)
-                    .ConfigureAwait(false);
+                await _watchlistRunner.TryRunForUserAsync(
+                    userId, "manual", new Progress<double>(), System.Threading.CancellationToken.None,
+                    letterboxdUsername).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -267,6 +286,11 @@ public class LetterboxdController : ControllerBase
         account.MirrorJellyseerrWatchlist = request.MirrorJellyseerrWatchlist;
         account.SkipPreviouslySynced = request.SkipPreviouslySynced;
         account.StopOnFailure = request.StopOnFailure;
+        account.IsPrimary = request.IsPrimary;
+        account.PlaylistName = request.PlaylistName;
+
+        // Keep the single-primary-per-user invariant after the user toggles flags.
+        Config.NormalisePrimaryFlags();
 
         Plugin.Instance!.SaveConfiguration();
         _logger.LogInformation("User {UserId} saved their Letterboxd account settings", userId);
@@ -339,58 +363,88 @@ public class LetterboxdController : ControllerBase
         if (string.IsNullOrEmpty(userId))
             return BadRequest(new { error = "Could not determine user" });
 
-        var account = Config.Accounts.FirstOrDefault(
-            a => a.Enabled && a.UserJellyfinId == userId);
-
-        if (account == null)
-            return BadRequest(new { error = "No Letterboxd account configured for this user" });
-
-        try
+        // When LetterboxdUsername is set, post under that single account. When it's
+        // null/empty, fan out to every enabled account for this Jellyfin user, so
+        // shared TV-user setups (e.g. Lachlan + Deb) get the review on both diaries.
+        List<Account> accounts;
+        if (!string.IsNullOrWhiteSpace(request.LetterboxdUsername))
         {
-            using var service = await LetterboxdServiceFactory.CreateAuthenticatedAsync(
-                account.LetterboxdUsername, account.LetterboxdPassword, account.RawCookies, _logger, account.UserAgent)
-                .ConfigureAwait(false);
+            var single = Config.FindAccount(userId, request.LetterboxdUsername!);
+            if (single == null)
+                return BadRequest(new { error = $"No enabled Letterboxd account '{request.LetterboxdUsername}' for this user" });
+            accounts = new List<Account> { single };
+        }
+        else
+        {
+            accounts = Config.GetEnabledAccountsForUser(userId).ToList();
+            if (accounts.Count == 0)
+                return BadRequest(new { error = "No Letterboxd accounts configured for this user" });
+        }
 
-            await service.PostReviewAsync(request.FilmSlug, request.ReviewText, request.ContainsSpoilers, request.IsRewatch, request.Date, request.Rating, request.TmdbId)
-                .ConfigureAwait(false);
+        var jellyfinUsername = GetJellyfinUsername() ?? userId;
+        var perAccount = new List<object>();
+        var anySuccess = false;
+        Exception? lastError = null;
 
-            _logger.LogInformation("Posted review for {FilmSlug} by {Username}",
-                request.FilmSlug, account.LetterboxdUsername);
+        foreach (var account in accounts)
+        {
+            try
+            {
+                using var service = await LetterboxdServiceFactory.CreateAuthenticatedAsync(
+                    account.LetterboxdUsername, account.LetterboxdPassword, account.RawCookies, _logger, account.UserAgent)
+                    .ConfigureAwait(false);
 
+                await service.PostReviewAsync(request.FilmSlug, request.ReviewText, request.ContainsSpoilers, request.IsRewatch, request.Date, request.Rating, request.TmdbId)
+                    .ConfigureAwait(false);
+
+                _logger.LogInformation("Posted review for {FilmSlug} by {Username}",
+                    request.FilmSlug, account.LetterboxdUsername);
+
+                var status = request.IsRewatch ? SyncStatus.Rewatch : SyncStatus.Success;
+                SyncHistory.Record(new SyncEvent
+                {
+                    FilmTitle = request.FilmSlug.Replace("-", " "),
+                    FilmSlug = request.FilmSlug,
+                    Username = jellyfinUsername,
+                    Timestamp = DateTime.UtcNow,
+                    Status = status,
+                    Source = "review"
+                });
+
+                perAccount.Add(new { letterboxdUsername = account.LetterboxdUsername, success = true });
+                anySuccess = true;
+            }
+            catch (Exception ex)
+            {
+                lastError = ex;
+                _logger.LogError("Failed to post review for {FilmSlug} as {LbUser}: {Message}",
+                    request.FilmSlug, account.LetterboxdUsername, ex.Message);
+
+                SyncHistory.Record(new SyncEvent
+                {
+                    FilmTitle = request.FilmSlug.Replace("-", " "),
+                    FilmSlug = request.FilmSlug,
+                    Username = jellyfinUsername,
+                    Timestamp = DateTime.UtcNow,
+                    Status = SyncStatus.Failed,
+                    Error = ex.Message,
+                    Source = "review"
+                });
+
+                perAccount.Add(new { letterboxdUsername = account.LetterboxdUsername, success = false, error = ex.Message });
+            }
+        }
+
+        // Mirror the rating to Jellyfin once if any account accepted it; the rating
+        // belongs to the Jellyfin user, not to a specific Letterboxd account, so a
+        // single writeback is correct regardless of how many accounts we posted to.
+        if (anySuccess)
             WriteJellyfinRating(userId, request.TmdbId, request.Rating);
 
-            var jellyfinUsername = GetJellyfinUsername() ?? account.LetterboxdUsername;
-            var status = request.IsRewatch ? SyncStatus.Rewatch : SyncStatus.Success;
-            SyncHistory.Record(new SyncEvent
-            {
-                FilmTitle = request.FilmSlug.Replace("-", " "),
-                FilmSlug = request.FilmSlug,
-                Username = jellyfinUsername,
-                Timestamp = DateTime.UtcNow,
-                Status = status,
-                Source = "review"
-            });
+        if (!anySuccess && lastError != null)
+            return BadRequest(new { error = lastError.Message, accounts = perAccount });
 
-            return Ok(new { success = true });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError("Failed to post review for {FilmSlug}: {Message}", request.FilmSlug, ex.Message);
-
-            var jellyfinUsernameForError = GetJellyfinUsername() ?? account.LetterboxdUsername;
-            SyncHistory.Record(new SyncEvent
-            {
-                FilmTitle = request.FilmSlug.Replace("-", " "),
-                FilmSlug = request.FilmSlug,
-                Username = jellyfinUsernameForError,
-                Timestamp = DateTime.UtcNow,
-                Status = SyncStatus.Failed,
-                Error = ex.Message,
-                Source = "review"
-            });
-
-            return BadRequest(new { error = ex.Message });
-        }
+        return Ok(new { success = true, accounts = perAccount });
     }
 
     /// <summary>
@@ -512,4 +566,11 @@ public class ReviewRequest
     public string? Date { get; set; }
     public double? Rating { get; set; }
     public int? TmdbId { get; set; }
+
+    /// <summary>
+    /// Optional. When set, the review is posted only to that Letterboxd account.
+    /// When null/empty, the review is fanned out to every enabled Letterboxd account
+    /// for the calling Jellyfin user.
+    /// </summary>
+    public string? LetterboxdUsername { get; set; }
 }

@@ -29,6 +29,10 @@ public class AccountUpdateRequest
     public bool SkipPreviouslySynced { get; set; } = true;
 
     public bool StopOnFailure { get; set; }
+
+    public bool IsPrimary { get; set; }
+
+    public string? PlaylistName { get; set; }
 }
 
 public class TestConnectionRequest

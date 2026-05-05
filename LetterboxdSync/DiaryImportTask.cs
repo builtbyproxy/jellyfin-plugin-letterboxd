@@ -47,51 +47,73 @@ public class DiaryImportTask : IScheduledTask
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var account = Config.Accounts.FirstOrDefault(
-                a => a.Enabled && a.EnableDiaryImport && a.UserJellyfinId == user.Id.ToString("N"));
+            // Collect entries from every enabled-with-diary-import account belonging to this
+            // Jellyfin user. GetEnabledAccountsForUser returns primary first, so the merge
+            // below naturally gives primary's rating priority on conflicts.
+            var accounts = Config.GetEnabledAccountsForUser(user.Id.ToString("N"))
+                .Where(a => a.EnableDiaryImport)
+                .ToList();
 
-            if (account == null)
+            if (accounts.Count == 0)
                 continue;
 
-            _logger.LogInformation("Starting diary import for {Username}", user.Username);
+            _logger.LogInformation("Starting diary import for {Username} ({AccountCount} account(s))",
+                user.Username, accounts.Count);
             SyncProgress.Start("Diary Import", "Authenticating");
 
-            ILetterboxdService service;
-            try
+            // Merge across accounts:
+            //  - diaryTmdbIds: union (any account watched it = mark played)
+            //  - ratingByTmdbId: first non-null wins, primary first (per OrderByDescending(IsPrimary))
+            var diaryTmdbIds = new HashSet<int>();
+            var ratingByTmdbId = new Dictionary<int, double>();
+            var ratingSourceByTmdbId = new Dictionary<int, string>();
+
+            foreach (var account in accounts)
             {
-                service = await LetterboxdServiceFactory.CreateAuthenticatedAsync(
-                    account.LetterboxdUsername, account.LetterboxdPassword, account.RawCookies, _logger, account.UserAgent)
-                    .ConfigureAwait(false);
+                ILetterboxdService service;
+                try
+                {
+                    service = await LetterboxdServiceFactory.CreateAuthenticatedAsync(
+                        account.LetterboxdUsername, account.LetterboxdPassword, account.RawCookies, _logger, account.UserAgent)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError("Auth failed for {Username} as {LbUser}: {Message}",
+                        user.Username, account.LetterboxdUsername, ex.Message);
+                    continue;
+                }
+
+                using var _s = service;
+
+                List<DiaryFilmEntry> entries;
+                try
+                {
+                    SyncProgress.SetPhase($"Scanning Letterboxd films for {account.LetterboxdUsername}");
+                    entries = await service.GetDiaryFilmEntriesAsync(account.LetterboxdUsername).ConfigureAwait(false);
+                    _logger.LogInformation("Found {Count} films in {LbUser}'s Letterboxd diary",
+                        entries.Count, account.LetterboxdUsername);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError("Failed to fetch diary for {Username} as {LbUser}: {Message}",
+                        user.Username, account.LetterboxdUsername, ex.Message);
+                    continue;
+                }
+
+                foreach (var entry in entries)
+                {
+                    diaryTmdbIds.Add(entry.TmdbId);
+                    if (entry.Rating.HasValue && !ratingByTmdbId.ContainsKey(entry.TmdbId))
+                    {
+                        ratingByTmdbId[entry.TmdbId] = entry.Rating.Value;
+                        ratingSourceByTmdbId[entry.TmdbId] = account.LetterboxdUsername;
+                    }
+                }
             }
-            catch (Exception ex)
-            {
-                _logger.LogError("Auth failed for {Username}: {Message}", user.Username, ex.Message);
+
+            if (diaryTmdbIds.Count == 0)
                 continue;
-            }
-
-            using var _s = service;
-
-            List<DiaryFilmEntry> diaryEntries;
-            try
-            {
-                SyncProgress.SetPhase("Scanning Letterboxd films");
-                diaryEntries = await service.GetDiaryFilmEntriesAsync(account.LetterboxdUsername).ConfigureAwait(false);
-                _logger.LogInformation("Found {Count} films in {Username}'s Letterboxd diary",
-                    diaryEntries.Count, account.LetterboxdUsername);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError("Failed to fetch diary for {Username}: {Message}", user.Username, ex.Message);
-                continue;
-            }
-
-            if (diaryEntries.Count == 0)
-                continue;
-
-            var ratingByTmdbId = diaryEntries
-                .Where(e => e.Rating.HasValue)
-                .ToDictionary(e => e.TmdbId, e => e.Rating!.Value);
-            var diaryTmdbIds = new HashSet<int>(diaryEntries.Select(e => e.TmdbId));
 
             // Pull all movies (not just unplayed) so we can also apply rating-only updates
             // to films already marked as played.
@@ -131,7 +153,9 @@ public class DiaryImportTask : IScheduledTask
                 // Jellyfin has no "rating last modified" timestamp to compare against, so we
                 // use absence-of-rating as the safe signal. Existing ratings (e.g. from
                 // Findroid) are preserved; users who want to overwrite from Letterboxd can
-                // post a review via the plugin dashboard, which always wins.
+                // post a review via the plugin dashboard, which always wins. With multiple
+                // Letterboxd accounts, the merge above already picked primary's rating first
+                // so primary wins on conflict.
                 if (ratingByTmdbId.TryGetValue(tmdbId, out var lbRating) &&
                     (!userData.Rating.HasValue || userData.Rating.Value <= 0))
                 {
@@ -141,8 +165,9 @@ public class DiaryImportTask : IScheduledTask
                         userData.Rating = jfRating;
                         changed = true;
                         ratingsApplied++;
-                        _logger.LogInformation("Imported Letterboxd rating {LbRating} -> Jellyfin {JfRating} for {Title}",
-                            lbRating, jfRating.Value, movie.Name);
+                        var ratingSource = ratingSourceByTmdbId.TryGetValue(tmdbId, out var src) ? src : "letterboxd";
+                        _logger.LogInformation("Imported Letterboxd rating {LbRating} -> Jellyfin {JfRating} for {Title} (from {Source})",
+                            lbRating, jfRating.Value, movie.Name, ratingSource);
                     }
                 }
 
