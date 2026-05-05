@@ -16,12 +16,28 @@ public static class TmdbCache
     private static Dictionary<string, int>? _cache;
     private static ILogger? _logger;
 
+    /// <summary>
+    /// Test-only override for the cache file location, plus a way to clear the
+    /// in-memory cache between tests. Production never assigns this; the default
+    /// CachePath logic uses the plugin's configurations directory.
+    /// </summary>
+    internal static string? CachePathOverride { get; set; }
+
+    /// <summary>Test hook: drop the in-memory cache so the next access re-reads from disk.</summary>
+    internal static void ResetForTesting()
+    {
+        lock (_lock) { _cache = null; }
+    }
+
     public static void SetLogger(ILogger logger) => _logger = logger;
 
     private static string CachePath
     {
         get
         {
+            if (!string.IsNullOrEmpty(CachePathOverride))
+                return CachePathOverride!;
+
             var assembly = typeof(TmdbCache).Assembly.Location;
             var pluginDir = Path.GetDirectoryName(assembly);
             if (!string.IsNullOrEmpty(pluginDir))

@@ -122,10 +122,23 @@ public class WatchlistSyncRunner
         }
     }
 
+    /// <summary>
+    /// Test-only override. When set, CreateJellyseerrClient delegates to this so tests
+    /// can inject a JellyseerrClient bound to a mock HttpMessageHandler. Production
+    /// never assigns it.
+    /// </summary>
+    internal static Func<string, string, ILogger, JellyseerrClient?>? JellyseerrClientFactoryOverride;
+
     private JellyseerrClient? CreateJellyseerrClient()
-        => JellyseerrClient.IsConfigured(Config.JellyseerrUrl, Config.JellyseerrApiKey)
-            ? new JellyseerrClient(Config.JellyseerrUrl!, Config.JellyseerrApiKey!, _logger)
-            : null;
+    {
+        if (!JellyseerrClient.IsConfigured(Config.JellyseerrUrl, Config.JellyseerrApiKey))
+            return null;
+
+        if (JellyseerrClientFactoryOverride != null)
+            return JellyseerrClientFactoryOverride(Config.JellyseerrUrl!, Config.JellyseerrApiKey!, _logger);
+
+        return new JellyseerrClient(Config.JellyseerrUrl!, Config.JellyseerrApiKey!, _logger);
+    }
 
     private async Task SyncOneUserAsync(User user, Account account, JellyseerrClient? jellyseerr, string source, CancellationToken cancellationToken)
     {

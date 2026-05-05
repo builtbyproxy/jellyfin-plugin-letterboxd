@@ -317,6 +317,96 @@ public class GetDiaryFilmEntriesIntegrationTests
     }
 
     [Fact]
+    public async Task GetWatchlistTmdbIdsAsync_ParsesItemsAndCursor()
+    {
+        var pageHits = new List<string>();
+        var page1 = @"{
+            ""items"": [
+                { ""id"": ""KQMM"", ""links"": [ { ""type"": ""tmdb"", ""id"": ""1233413"" } ] },
+                { ""id"": ""2a9q"", ""links"": [ { ""type"": ""tmdb"", ""id"": ""550"" } ] }
+            ],
+            ""cursor"": ""next-page""
+        }";
+        var page2 = @"{
+            ""items"": [
+                { ""id"": ""ABCD"", ""links"": [ { ""type"": ""tmdb"", ""id"": ""1726"" } ] }
+            ]
+        }";
+
+        var handler = ApiTestHelpers.CreateAuthenticatedHandler(extraHandler: (request) =>
+        {
+            if (request.RequestUri?.AbsolutePath.Contains("/watchlist") == true)
+            {
+                var q = request.RequestUri.Query;
+                pageHits.Add(q);
+                var body = q.Contains("cursor=") ? page2 : page1;
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(body)
+                };
+            }
+            return null;
+        });
+
+        using var client = new LetterboxdApiClient(TestLogger, handler);
+        await client.AuthenticateAsync("user", "pass");
+        var ids = await client.GetWatchlistTmdbIdsAsync("user");
+
+        Assert.Equal(new[] { 1233413, 550, 1726 }, ids.ToArray());
+        Assert.Equal(2, pageHits.Count);
+        Assert.DoesNotContain("cursor=", pageHits[0]);
+        Assert.Contains("cursor=", pageHits[1]);
+    }
+
+    [Fact]
+    public async Task GetWatchlistTmdbIdsAsync_EmptyResponse_ReturnsEmpty()
+    {
+        var handler = ApiTestHelpers.CreateAuthenticatedHandler(extraHandler: (request) =>
+        {
+            if (request.RequestUri?.AbsolutePath.Contains("/watchlist") == true)
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(@"{ ""items"": [] }")
+                };
+            return null;
+        });
+
+        using var client = new LetterboxdApiClient(TestLogger, handler);
+        await client.AuthenticateAsync("user", "pass");
+        var ids = await client.GetWatchlistTmdbIdsAsync("user");
+
+        Assert.Empty(ids);
+    }
+
+    [Fact]
+    public async Task GetWatchlistTmdbIdsAsync_ItemWithoutTmdbLink_Skipped()
+    {
+        // Some Letterboxd films don't have a TMDb link (especially older or obscure
+        // titles). The watchlist fetcher should silently skip them rather than fail
+        // the whole sync, so the rest of the watchlist still imports.
+        var handler = ApiTestHelpers.CreateAuthenticatedHandler(extraHandler: (request) =>
+        {
+            if (request.RequestUri?.AbsolutePath.Contains("/watchlist") == true)
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(@"{
+                        ""items"": [
+                            { ""id"": ""x"", ""links"": [ { ""type"": ""imdb"", ""id"": ""tt123"" } ] },
+                            { ""id"": ""y"", ""links"": [ { ""type"": ""tmdb"", ""id"": ""550"" } ] }
+                        ]
+                    }")
+                };
+            return null;
+        });
+
+        using var client = new LetterboxdApiClient(TestLogger, handler);
+        await client.AuthenticateAsync("user", "pass");
+        var ids = await client.GetWatchlistTmdbIdsAsync("user");
+
+        Assert.Equal(new[] { 550 }, ids.ToArray());
+    }
+
+    [Fact]
     public async Task GetDiaryTmdbIdsAsync_ReturnsJustTmdbIds()
     {
         var handler = ApiTestHelpers.CreateAuthenticatedHandler(extraHandler: (request) =>

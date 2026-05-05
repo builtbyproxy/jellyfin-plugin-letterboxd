@@ -6,9 +6,20 @@ namespace LetterboxdSync;
 
 public static class LetterboxdServiceFactory
 {
+    /// <summary>
+    /// Test-only override. When non-null, CreateAuthenticatedAsync delegates to this
+    /// instead of constructing a real LetterboxdApiClient/ScrapingLetterboxdService.
+    /// Tests in this assembly's InternalsVisibleTo target set it to inject mock
+    /// ILetterboxdService instances; production never assigns it.
+    /// </summary>
+    internal static Func<string, string, string?, ILogger, string?, Task<ILetterboxdService>>? OverrideForTesting;
+
     public static async Task<ILetterboxdService> CreateAuthenticatedAsync(
         string username, string password, string? rawCookies, ILogger logger, string? userAgent = null)
     {
+        if (OverrideForTesting != null)
+            return await OverrideForTesting(username, password, rawCookies, logger, userAgent).ConfigureAwait(false);
+
         try
         {
             var apiClient = new LetterboxdApiClient(logger);
