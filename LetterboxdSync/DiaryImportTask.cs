@@ -125,6 +125,23 @@ public class DiaryImportTask : IScheduledTask
                     marked++;
                     _logger.LogInformation("Marked {Title} as played for {Username} (from Letterboxd diary)",
                         movie.Name, user.Username);
+
+                    // Record a diary-import event so LetterboxdSyncRunner can recognise this
+                    // film as imported (rather than truly watched on Jellyfin) and refuse to
+                    // re-export it back to Letterboxd. Without this, the next scheduled sync
+                    // sees IsPlayed=true with no LastPlayedDate, defaults the viewing date to
+                    // today, fails the same-day duplicate check (LB diary entry is from
+                    // another date), and creates a phantom rewatch entry. See issue #32.
+                    SyncHistory.Record(new SyncEvent
+                    {
+                        FilmTitle = movie.Name,
+                        TmdbId = tmdbId,
+                        Username = user.Username ?? string.Empty,
+                        Timestamp = DateTime.UtcNow,
+                        Status = SyncStatus.Skipped,
+                        Source = SyncEventSources.DiaryImport,
+                        Error = "Marked played from Letterboxd diary; suppress re-export"
+                    });
                 }
 
                 // Apply Letterboxd rating only when Jellyfin doesn't already have one.

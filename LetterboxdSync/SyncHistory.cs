@@ -16,6 +16,16 @@ public enum SyncStatus
     Rewatch
 }
 
+/// <summary>
+/// Well-known values for SyncEvent.Source. Free-form strings are still allowed,
+/// but these are the ones the runner switches on.
+/// </summary>
+public static class SyncEventSources
+{
+    /// <summary>DiaryImportTask marked a Jellyfin item played because it appeared on the user's Letterboxd diary.</summary>
+    public const string DiaryImport = "diary-import";
+}
+
 public class SyncEvent
 {
     public string FilmTitle { get; set; } = string.Empty;
@@ -278,6 +288,32 @@ public static class SyncHistory
             if (latest == null || e.Timestamp > latest.Timestamp) latest = e;
         }
         return latest?.ViewingDate;
+    }
+
+    /// <summary>
+    /// True if DiaryImportTask has previously marked this user's Jellyfin copy of this
+    /// film as played because the film was found on their Letterboxd diary. The runner
+    /// uses this as a guard against the import-then-export loop described in
+    /// https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/issues/32.
+    /// </summary>
+    public static bool WasImportedFromDiary(string username, int tmdbId)
+    {
+        lock (_lock)
+        {
+            return WasImportedFromDiary(LoadEvents(), username, tmdbId);
+        }
+    }
+
+    internal static bool WasImportedFromDiary(IEnumerable<SyncEvent> events, string username, int tmdbId)
+    {
+        foreach (var e in events)
+        {
+            if (e.TmdbId != tmdbId) continue;
+            if (!string.Equals(e.Username, username, StringComparison.Ordinal)) continue;
+            if (string.Equals(e.Source, SyncEventSources.DiaryImport, StringComparison.Ordinal))
+                return true;
+        }
+        return false;
     }
 
     public static (int Total, int Success, int Failed, int Skipped, int Rewatches) GetStats(string? username = null)

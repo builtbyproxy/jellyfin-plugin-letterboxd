@@ -45,6 +45,11 @@ public class LetterboxdSyncRunnerTests : IDisposable
 
         new Plugin(paths, xml);
 
+        // Isolate SyncHistory I/O per test so the diary-import suppression check
+        // doesn't see stale events from other tests.
+        SyncHistory.DataPathOverride = Path.Combine(_tempDir, "sync-history.jsonl");
+        SyncHistory.ResetForTesting();
+
         _userManager = Substitute.For<IUserManager>();
         _libraryManager = Substitute.For<ILibraryManager>();
         _userDataManager = Substitute.For<IUserDataManager>();
@@ -55,6 +60,8 @@ public class LetterboxdSyncRunnerTests : IDisposable
     public void Dispose()
     {
         LetterboxdServiceFactory.OverrideForTesting = null;
+        SyncHistory.DataPathOverride = null;
+        SyncHistory.ResetForTesting();
         try { if (Directory.Exists(_tempDir)) Directory.Delete(_tempDir, true); } catch { }
     }
 
@@ -369,5 +376,101 @@ public class LetterboxdSyncRunnerTests : IDisposable
         Assert.True(ok);
         // We never get past the TMDb-id check, so LookupFilmByTmdbIdAsync isn't called.
         await service.DidNotReceive().LookupFilmByTmdbIdAsync(Arg.Any<int>());
+    }
+
+    // ----- Diary-import suppression (issue #32) -----
+
+    [Fact]
+    public async Task TryRunForUserAsync_DiaryImportedFilmWithoutLastPlayedDate_DoesNotExportToLetterboxd()
+    {
+        // The bug: DiaryImportTask marked the film played from the LB diary; the next
+        // scheduled sync sees IsPlayed=true with no LastPlayedDate, defaults to today,
+        // and posts a phantom diary entry. With the fix, the diary-import marker
+        // gates re-export until a real Jellyfin playback (LastPlayedDate set).
+        var (user, userId) = MakeUser("lachlan");
+        _userManager.Users.Returns(new[] { user });
+        AddAccount(userId);
+
+        var movie = MakeMovie(1233413);
+        _libraryManager.GetItemList(Arg.Any<InternalItemsQuery>()).Returns(new List<BaseItem> { movie });
+
+        var importedUserData = new UserItemData
+        {
+            Key = "k", Played = true, LastPlayedDate = null
+        };
+        _userDataManager.GetUserData(user, movie).Returns(importedUserData);
+
+        SyncHistory.Record(new SyncEvent
+        {
+            FilmTitle = "Sinners",
+            TmdbId = 1233413,
+            Username = "lachlan",
+            Timestamp = DateTime.UtcNow,
+            Status = SyncStatus.Skipped,
+            Source = SyncEventSources.DiaryImport
+        });
+
+        var factoryHit = false;
+        LetterboxdServiceFactory.OverrideForTesting = (_, _, _, _, _) =>
+        {
+            factoryHit = true;
+            return Task.FromResult(Substitute.For<ILetterboxdService>());
+        };
+
+        var ok = await _runner.TryRunForUserAsync(userId, "scheduled",
+            new Progress<double>(), CancellationToken.None);
+
+        Assert.True(ok);
+        // Filter eliminated the only candidate, so the runner exits before authenticating.
+        Assert.False(factoryHit);
+    }
+
+    [Fact]
+    public async Task TryRunForUserAsync_DiaryImportedFilmThenActuallyPlayed_StillExportsToLetterboxd()
+    {
+        // Counterpart to the suppression test: if the user actually watches the film
+        // on Jellyfin after the import (LastPlayedDate set), the suppression must
+        // release so the rewatch lands on Letterboxd.
+        var (user, userId) = MakeUser("lachlan");
+        _userManager.Users.Returns(new[] { user });
+        AddAccount(userId);
+
+        var movie = MakeMovie(1233413);
+        _libraryManager.GetItemList(Arg.Any<InternalItemsQuery>()).Returns(new List<BaseItem> { movie });
+
+        var playedUserData = new UserItemData
+        {
+            Key = "k", Played = true, LastPlayedDate = DateTime.UtcNow
+        };
+        _userDataManager.GetUserData(user, movie).Returns(playedUserData);
+
+        SyncHistory.Record(new SyncEvent
+        {
+            FilmTitle = "Sinners",
+            TmdbId = 1233413,
+            Username = "lachlan",
+            Timestamp = DateTime.UtcNow.AddDays(-3),
+            Status = SyncStatus.Skipped,
+            Source = SyncEventSources.DiaryImport
+        });
+
+        var factoryHit = false;
+        var service = Substitute.For<ILetterboxdService>();
+        // Make the lookup throw so we don't have to wait through the runner's inter-call
+        // delay. We only care that the runner got past the diary-import suppression and
+        // attempted to authenticate / look the film up.
+        service.LookupFilmByTmdbIdAsync(Arg.Any<int>())
+            .Returns<Task<FilmResult>>(_ => throw new Exception("stop here"));
+        LetterboxdServiceFactory.OverrideForTesting = (_, _, _, _, _) =>
+        {
+            factoryHit = true;
+            return Task.FromResult(service);
+        };
+
+        var ok = await _runner.TryRunForUserAsync(userId, "scheduled",
+            new Progress<double>(), CancellationToken.None);
+
+        Assert.True(ok);
+        Assert.True(factoryHit, "real playback after diary import should re-enable export");
     }
 }

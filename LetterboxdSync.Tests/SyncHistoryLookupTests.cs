@@ -166,4 +166,67 @@ public class SyncHistoryLookupTests
         // The newer event belongs to the other user — ours is older but is the right answer.
         Assert.Equal(SyncStatus.Failed, SyncHistory.GetLastStatusForFilm(events, User, FilmA));
     }
+
+    private static SyncEvent DiaryImportEvent(string username, int tmdbId, DateTime? recordedAt = null)
+        => new()
+        {
+            Username = username,
+            TmdbId = tmdbId,
+            Status = SyncStatus.Skipped,
+            Source = SyncEventSources.DiaryImport,
+            Timestamp = recordedAt ?? DateTime.UtcNow
+        };
+
+    [Fact]
+    public void WasImportedFromDiary_TrueWhenMatchingDiaryImportEventExists()
+    {
+        var events = new List<SyncEvent> { DiaryImportEvent(User, FilmA) };
+
+        Assert.True(SyncHistory.WasImportedFromDiary(events, User, FilmA));
+    }
+
+    [Fact]
+    public void WasImportedFromDiary_FalseWhenSourceIsNotDiaryImport()
+    {
+        // Only the diary-import sentinel counts; ordinary sync events are not import markers.
+        var events = new List<SyncEvent>
+        {
+            Event(User, FilmA, ViewedToday, SyncStatus.Success)
+        };
+
+        Assert.False(SyncHistory.WasImportedFromDiary(events, User, FilmA));
+    }
+
+    [Fact]
+    public void WasImportedFromDiary_IgnoresOtherUsersAndOtherFilms()
+    {
+        var events = new List<SyncEvent>
+        {
+            DiaryImportEvent(OtherUser, FilmA),
+            DiaryImportEvent(User, FilmB)
+        };
+
+        Assert.False(SyncHistory.WasImportedFromDiary(events, User, FilmA));
+    }
+
+    [Fact]
+    public void WasImportedFromDiary_FalseOnEmptyHistory()
+    {
+        Assert.False(SyncHistory.WasImportedFromDiary(new List<SyncEvent>(), User, FilmA));
+    }
+
+    [Fact]
+    public void WasImportedFromDiary_TrueWhenAnyHistoricalDiaryImportExists()
+    {
+        // Even if subsequent attempts produce other events, the historical import marker
+        // should keep the runner from re-exporting until a real Jellyfin playback happens
+        // (which the runner gates separately via LastPlayedDate).
+        var events = new List<SyncEvent>
+        {
+            DiaryImportEvent(User, FilmA, recordedAt: new DateTime(2026, 4, 1)),
+            Event(User, FilmA, ViewedToday, SyncStatus.Failed, recordedAt: new DateTime(2026, 4, 2))
+        };
+
+        Assert.True(SyncHistory.WasImportedFromDiary(events, User, FilmA));
+    }
 }

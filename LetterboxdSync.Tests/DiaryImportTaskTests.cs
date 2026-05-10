@@ -45,6 +45,11 @@ public class DiaryImportTaskTests : IDisposable
 
         new Plugin(paths, xml);
 
+        // Isolate SyncHistory I/O to the test's temp dir so each test starts clean and
+        // doesn't pollute the shared on-disk store the assembly would otherwise use.
+        SyncHistory.DataPathOverride = Path.Combine(_tempDir, "sync-history.jsonl");
+        SyncHistory.ResetForTesting();
+
         _userManager = Substitute.For<IUserManager>();
         _libraryManager = Substitute.For<ILibraryManager>();
         _userDataManager = Substitute.For<IUserDataManager>();
@@ -55,6 +60,8 @@ public class DiaryImportTaskTests : IDisposable
     public void Dispose()
     {
         LetterboxdServiceFactory.OverrideForTesting = null;
+        SyncHistory.DataPathOverride = null;
+        SyncHistory.ResetForTesting();
         try { if (Directory.Exists(_tempDir)) Directory.Delete(_tempDir, true); } catch { }
     }
 
@@ -368,5 +375,72 @@ public class DiaryImportTaskTests : IDisposable
         Assert.Equal("LetterboxdDiaryImport", _task.Key);
         Assert.Equal("Letterboxd", _task.Category);
         Assert.False(string.IsNullOrEmpty(_task.Description));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_NewlyMarkedPlayed_RecordsDiaryImportSyncEvent()
+    {
+        // Regression test for #32: a film marked played from the LB diary must be tagged
+        // in SyncHistory so the LetterboxdSyncRunner can recognise it as imported and
+        // refuse to re-export it back to Letterboxd as a phantom diary entry.
+        var (user, userId) = MakeUser("lachlan");
+        _userManager.Users.Returns(new[] { user });
+        Plugin.Instance!.Configuration.Accounts.Add(new Account
+        {
+            UserJellyfinId = userId, LetterboxdUsername = "u",
+            Enabled = true, EnableDiaryImport = true
+        });
+
+        var service = Substitute.For<ILetterboxdService>();
+        service.GetDiaryFilmEntriesAsync(Arg.Any<string>())
+            .Returns(new List<DiaryFilmEntry> { new(1233413, null) });
+        LetterboxdServiceFactory.OverrideForTesting = (_, _, _, _, _) => Task.FromResult(service);
+
+        var movie = MakeMovie(1233413, "Sinners");
+        _libraryManager.GetItemList(Arg.Any<InternalItemsQuery>())
+            .Returns(new List<BaseItem> { movie });
+
+        var userData = MakeUserData(played: false, rating: null);
+        _userDataManager.GetUserData(user, movie).Returns(userData);
+
+        await _task.ExecuteAsync(new Progress<double>(), CancellationToken.None);
+
+        Assert.True(SyncHistory.WasImportedFromDiary("lachlan", 1233413));
+
+        var recorded = SyncHistory.GetRecent(count: 10, username: "lachlan");
+        var importEvent = Assert.Single(recorded);
+        Assert.Equal(SyncEventSources.DiaryImport, importEvent.Source);
+        Assert.Equal(1233413, importEvent.TmdbId);
+        Assert.Equal("Sinners", importEvent.FilmTitle);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_AlreadyPlayed_DoesNotRecordDiaryImportEvent()
+    {
+        // If the film was already marked played in Jellyfin (e.g. real playback or a prior
+        // import), we don't write a fresh marker. Re-running the import is idempotent.
+        var (user, userId) = MakeUser("lachlan");
+        _userManager.Users.Returns(new[] { user });
+        Plugin.Instance!.Configuration.Accounts.Add(new Account
+        {
+            UserJellyfinId = userId, LetterboxdUsername = "u",
+            Enabled = true, EnableDiaryImport = true
+        });
+
+        var service = Substitute.For<ILetterboxdService>();
+        service.GetDiaryFilmEntriesAsync(Arg.Any<string>())
+            .Returns(new List<DiaryFilmEntry> { new(1233413, null) });
+        LetterboxdServiceFactory.OverrideForTesting = (_, _, _, _, _) => Task.FromResult(service);
+
+        var movie = MakeMovie(1233413);
+        _libraryManager.GetItemList(Arg.Any<InternalItemsQuery>()).Returns(new List<BaseItem> { movie });
+
+        var userData = MakeUserData(played: true, rating: null);
+        _userDataManager.GetUserData(user, movie).Returns(userData);
+
+        await _task.ExecuteAsync(new Progress<double>(), CancellationToken.None);
+
+        Assert.False(SyncHistory.WasImportedFromDiary("lachlan", 1233413));
+        Assert.Empty(SyncHistory.GetRecent(count: 10, username: "lachlan"));
     }
 }

@@ -15,8 +15,12 @@ namespace LetterboxdSync.Tests;
 /// the public API (Record / GetRecent / GetPage / GetLastStatusForFilm / GetStats /
 /// WasSuccessfullySynced / GetLastSuccessfulSyncDate) end-to-end via the new
 /// DataPathOverride hook so file I/O is isolated to a temp file per test.
+///
+/// Lives in the "Plugin" collection because PlaybackHandler / LetterboxdSyncRunner
+/// / DiaryImportTask tests in that collection write to SyncHistory through the
+/// code under test, and xUnit only serialises tests within the same collection.
 /// </summary>
-[Collection("SyncHistory")]
+[Collection("Plugin")]
 public class SyncHistoryStaticTests : IDisposable
 {
     private readonly string _tempDir;

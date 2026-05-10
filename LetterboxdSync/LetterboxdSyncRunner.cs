@@ -152,6 +152,41 @@ public class LetterboxdSyncRunner
             return;
         }
 
+        // Suppress films that DiaryImportTask marked played from the user's Letterboxd
+        // diary, unless they've since been actually watched on Jellyfin (LastPlayedDate
+        // set). Without this, the daily sync would invent a phantom rewatch every time
+        // it ran for the same imported film, because viewingDate defaults to today
+        // when LastPlayedDate is null and the LB-side same-day duplicate check
+        // therefore never matches the original (older) diary date. See issue #32.
+        var skippedDiaryImports = 0;
+        movies = movies.Where(m =>
+        {
+            var tmdbStr = m.GetProviderId(MetadataProvider.Tmdb);
+            if (!int.TryParse(tmdbStr, out var tmdbId)) return true;
+
+            var ud = _userDataManager.GetUserData(user, m);
+            if (ud?.LastPlayedDate.HasValue == true) return true;
+
+            if (SyncHistory.WasImportedFromDiary(user.Username ?? string.Empty, tmdbId))
+            {
+                skippedDiaryImports++;
+                return false;
+            }
+            return true;
+        }).ToList();
+
+        if (skippedDiaryImports > 0)
+            _logger.LogInformation(
+                "Skipping {Count} films for {Username}: previously imported from Letterboxd diary " +
+                "and not played on Jellyfin since",
+                skippedDiaryImports, user.Username);
+
+        if (movies.Count == 0)
+        {
+            SyncProgress.Complete();
+            return;
+        }
+
         // Filter out anything we already successfully synced for this exact viewing date,
         // so we don't burn Cloudflare quota re-checking films that are definitely on Letterboxd.
         // Sort what's left so previously-failed/skipped films come first — if rate limits hit,
