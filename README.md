@@ -38,17 +38,22 @@ Uses Letterboxd's current JSON API (`/api/v0/production-log-entries`).
 ### Plugin repository (recommended)
 
 1. In Jellyfin, go to **Dashboard > Plugins > Repositories**
-2. Add a new repository:
+2. Add the **File Transformation** repository (required for the sidebar link):
+   - **Name:** `File Transformation`
+   - **URL:** `https://www.iamparadox.dev/jellyfin/plugins/manifest.json`
+3. Add the LetterboxdSync repository:
    - **Name:** `LetterboxdSync`
    - **URL:** `https://raw.githubusercontent.com/builtbyproxy/jellyfin-plugin-letterboxd/main/manifest.json`
-3. Go to **Catalog**, find **LetterboxdSync**, and click **Install**
-4. Restart Jellyfin
+4. Go to **Catalog**, install **File Transformation**, then install **LetterboxdSync**
+5. Restart Jellyfin
+6. Hard-refresh the Jellyfin web UI (Ctrl/Cmd + Shift + R) so the new sidebar link loads
 
 ### Manual install
 
-1. Download the latest ZIP from [Releases](https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/releases)
-2. Extract `LetterboxdSync.dll` and `HtmlAgilityPack.dll` to your Jellyfin plugins directory
-3. Restart Jellyfin
+1. Install the **File Transformation** plugin first (see [iamparadox27/Jellyfin.Plugin.FileTransformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation/releases)), required for the sidebar link to appear
+2. Download the latest LetterboxdSync ZIP from [Releases](https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/releases)
+3. Extract `LetterboxdSync.dll` and `HtmlAgilityPack.dll` to your Jellyfin plugins directory
+4. Restart Jellyfin
 
 ## Setup
 
@@ -99,6 +104,7 @@ The `cf_clearance` cookie expires periodically and may need refreshing.
 
 - Jellyfin 10.11+
 - A Letterboxd account
+- [File Transformation plugin](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation), required for the Letterboxd link to appear in the Jellyfin sidebar (everything else works without it)
 
 ## Building from source
 

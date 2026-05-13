@@ -7,6 +7,8 @@ import DashboardPeek from '../components/DashboardPeek.astro';
 
 const repoUrl = 'https://github.com/builtbyproxy/jellyfin-plugin-letterboxd';
 const manifestUrl = 'https://raw.githubusercontent.com/builtbyproxy/jellyfin-plugin-letterboxd/main/manifest.json';
+const fileTransformationManifestUrl = 'https://www.iamparadox.dev/jellyfin/plugins/manifest.json';
+const fileTransformationRepoUrl = 'https://github.com/IAmParadox27/jellyfin-plugin-file-transformation';
 const releasesUrl = `${repoUrl}/releases`;
 const latestReleaseUrl = `${repoUrl}/releases/latest`;
 
@@ -204,7 +206,16 @@ const featureGroups: FeatureGroup[] = [
           <h3>Plugin repository</h3>
           <ol class="steps">
             <li>Open <strong>Dashboard &rarr; Plugins &rarr; Repositories</strong> in Jellyfin.</li>
-            <li>Add a new repository with name <code>LetterboxdSync</code> and URL:
+            <li>Add the <strong>File Transformation</strong> repository (needed for the sidebar link to appear):
+              <div class="install-pill install-pill-inline" data-pill>
+                <code class="install-pill-url">{fileTransformationManifestUrl}</code>
+                <button class="install-pill-btn" type="button" data-copy={fileTransformationManifestUrl} aria-label="Copy File Transformation manifest URL">
+                  <span class="copy-icon" aria-hidden="true">⧉</span>
+                  <span class="copy-text">Copy</span>
+                </button>
+              </div>
+            </li>
+            <li>Add the <strong>LetterboxdSync</strong> repository:
               <div class="install-pill install-pill-inline" data-pill>
                 <code class="install-pill-url">{manifestUrl}</code>
                 <button class="install-pill-btn" type="button" data-copy={manifestUrl} aria-label="Copy manifest URL">
@@ -213,15 +224,16 @@ const featureGroups: FeatureGroup[] = [
                 </button>
               </div>
             </li>
-            <li>Open the <strong>Catalog</strong>, find <strong>LetterboxdSync</strong>, and click <strong>Install</strong>.</li>
-            <li>Restart Jellyfin.</li>
+            <li>Open the <strong>Catalog</strong>, install <strong>File Transformation</strong>, then install <strong>LetterboxdSync</strong>.</li>
+            <li>Restart Jellyfin, then hard-refresh the web UI (Ctrl/Cmd + Shift + R) so the sidebar link loads.</li>
           </ol>
         </div>
 
         <div class="install-card">
           <h3>Manual install</h3>
           <ol class="steps">
-            <li>Download the latest ZIP from <a href={latestReleaseUrl} rel="noopener">Releases</a>.</li>
+            <li>Install the <a href={fileTransformationRepoUrl} rel="noopener">File Transformation plugin</a> first, required for the Letterboxd sidebar link.</li>
+            <li>Download the latest LetterboxdSync ZIP from <a href={latestReleaseUrl} rel="noopener">Releases</a>.</li>
             <li>Extract <code>LetterboxdSync.dll</code> and <code>HtmlAgilityPack.dll</code> into your Jellyfin plugins directory.</li>
             <li>Restart Jellyfin.</li>
           </ol>
@@ -232,6 +244,7 @@ const featureGroups: FeatureGroup[] = [
       <div class="reqs">
         <div class="req"><span class="req-label">Jellyfin</span><span class="req-value">10.11 or newer</span></div>
         <div class="req"><span class="req-label">Requires</span><span class="req-value">A Letterboxd account</span></div>
+        <div class="req"><span class="req-label">For sidebar link</span><span class="req-value"><a href={fileTransformationRepoUrl} rel="noopener">File Transformation plugin</a></span></div>
         <div class="req"><span class="req-label">License</span><span class="req-value">MIT</span></div>
       </div>
     </div>
