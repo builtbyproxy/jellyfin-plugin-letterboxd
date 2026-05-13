@@ -8,6 +8,7 @@
 [![Downloads](https://img.shields.io/github/downloads/builtbyproxy/jellyfin-plugin-letterboxd/total)](https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/releases)
 
 **Website:** [lachlanyoung.dev/jellyfin-plugin-letterboxd](https://lachlanyoung.dev/jellyfin-plugin-letterboxd/)
+**What's new:** [Release notes for every version](https://lachlanyoung.dev/jellyfin-plugin-letterboxd/releases/)
 
 Automatically sync your Jellyfin watch history to your Letterboxd diary. Films are logged in real-time when you finish watching, with a daily scheduled sync as a safety net.
 
@@ -115,6 +116,13 @@ dotnet build -c Release
 ```
 
 Output DLLs are in `LetterboxdSync/bin/Release/net9.0/`.
+
+## Contributing
+
+PRs welcome. A few conventions:
+
+- **PR body shape** lives in [`.github/pull_request_template.md`](.github/pull_request_template.md). Symptom first, plain English, six fixed sections (What's broken, Why it happens, What this PR does, How to test, Follow-ups).
+- **Non-trivial changes** are planned through [`openspec/`](openspec/) before implementation: proposal, design, specs, then tasks. See [`openspec/changes/`](openspec/changes/) for active proposals and the [`archive/`](openspec/changes/archive/) folder for past ones.
 
 ## License
 
