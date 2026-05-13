@@ -97,9 +97,19 @@ If login fails with a 403 error:
 5. Paste it into the **Raw Cookies** field
 6. Copy the **User-Agent** request header value from the same request and paste it into the **User-Agent** field
 
-The `cf_clearance` cookie expires periodically and may need refreshing.
-
 **Important:** Cloudflare ties `cf_clearance` to the exact User-Agent that solved the challenge. If you copied cookies from Chrome but leave the User-Agent field blank, the plugin sends the default Firefox UA and Cloudflare will reject the cookie. Always paste the User-Agent from the same browser you copied the cookies from. Leave it blank only if you copied cookies from Firefox 134 on Windows.
+
+#### Still 403ing after pasting Raw Cookies and a matching User-Agent
+
+When a correctly-copied cookie still gets blocked, it's usually one of these:
+
+1. **Different IP.** Cloudflare pins `cf_clearance` to the IP address that solved the challenge, not just the User-Agent. If the box running Jellyfin reaches the internet via a different public IP than the browser did (different machine, VPN, mobile tether, a server in a datacenter), Cloudflare sees the token arrive from a new IP and rejects it. Fix: paste fresh cookies from a browser running on the **same network as the Jellyfin server**, and watch out for VPNs or split tunnels.
+
+2. **It expired.** `cf_clearance` from a managed challenge is short-lived, often around 30 minutes. If there's a gap between copying the cookies and the sync actually running, the token can already be dead. Fix: paste fresh cookies and immediately trigger a sync from the plugin dashboard rather than waiting for the scheduled run.
+
+3. **Connection fingerprint.** Cloudflare doesn't only check the cookie and UA, it also fingerprints the TLS handshake and HTTP/2 behaviour of the connection. A plugin's HTTP client doesn't look like a real browser at that layer, so on a site running bot-fight mode the right cookie isn't always enough on its own. There isn't much the plugin can do about this one.
+
+If you've ruled all three out and a single film keeps getting stuck on the TMDb lookup, open an issue. A workaround that skips the Cloudflare-protected lookup for that one film (pointing a TMDb ID directly at a Letterboxd slug) is being considered.
 
 ## Requirements
 

@@ -32,7 +32,13 @@ public class LetterboxdScraper
         using var res = await _http.GetWithCloudflareRetryAsync($"/tmdb/{tmdbId}").ConfigureAwait(false);
 
         if (res.StatusCode == HttpStatusCode.Forbidden)
-            throw new Exception($"TMDb lookup returned 403 for /tmdb/{tmdbId} after retries. Cloudflare is blocking. Try providing raw cookies.");
+            throw new Exception(
+                $"TMDb lookup returned 403 for /tmdb/{tmdbId} after retries. Cloudflare is blocking. " +
+                "If Raw Cookies and a matching User-Agent are already set, cf_clearance is most likely " +
+                "(1) expired (the token is short-lived, often around 30 minutes), " +
+                "(2) pinned to a different IP than the Jellyfin server (Cloudflare ties the token to the IP that solved the challenge, so a VPN or different machine breaks it), or " +
+                "(3) rejected by TLS fingerprinting (the plugin's HTTP client doesn't look like a real browser at the connection layer). " +
+                "See README \"Cloudflare issues\" for what to try.");
 
         if (res.StatusCode == HttpStatusCode.NotFound)
             throw new Exception($"Film with TMDb ID {tmdbId} not found on Letterboxd.");
