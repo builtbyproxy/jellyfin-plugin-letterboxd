@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.11.3.0",
+        "changelog": "Docs: when a Cloudflare 403 happens after you've already pasted Raw Cookies and a matching User-Agent, the plugin error message and README now explain why (cf_clearance is short-lived, pinned to the IP that solved the challenge, and the connection itself is TLS-fingerprinted) and what to try. Addresses the dead-end case reported in #34. No plugin behaviour changes.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/releases/download/v1.11.3/jellyfin-plugin-letterboxd-v1.11.3.zip",
+        "checksum": "PLACEHOLDER",
+        "timestamp": "2026-05-14T00:00:00Z"
+      },
+      {
         "version": "1.11.2.0",
         "changelog": "Fix: with diary-import enabled, the daily sync was posting phantom rewatch entries to Letterboxd for films you had only marked played via diary import (never actually watched on Jellyfin). The runner now suppresses these films until a real Jellyfin playback sets a LastPlayedDate, at which point the rewatch lands on Letterboxd as expected. Docs: install instructions now call out the File Transformation plugin as a prerequisite for the in-sidebar Letterboxd link.",
         "targetAbi": "10.11.0.0",
