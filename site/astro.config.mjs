@@ -1,8 +1,7 @@
 import { defineConfig } from 'astro/config';
 
 export default defineConfig({
-  site: 'https://lachlanyoung.dev',
-  base: '/jellyfin-plugin-letterboxd',
+  site: 'https://letterboxdsync.dev',
   trailingSlash: 'ignore',
   build: {
     assets: 'assets',

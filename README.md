@@ -1,4 +1,4 @@
-# [Jellyfin Letterboxd Sync](https://lachlanyoung.dev/jellyfin-plugin-letterboxd/)
+# [Jellyfin Letterboxd Sync](https://letterboxdsync.dev/)
 
 [![CI](https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/actions/workflows/ci.yml/badge.svg)](https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/actions/workflows/ci.yml)
 [![Release](https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/actions/workflows/release.yml/badge.svg)](https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/actions/workflows/release.yml)
@@ -7,8 +7,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Downloads](https://img.shields.io/github/downloads/builtbyproxy/jellyfin-plugin-letterboxd/total)](https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/releases)
 
-**Website:** [lachlanyoung.dev/jellyfin-plugin-letterboxd](https://lachlanyoung.dev/jellyfin-plugin-letterboxd/)
-**What's new:** [Release notes for every version](https://lachlanyoung.dev/jellyfin-plugin-letterboxd/releases/)
+**Website:** [letterboxdsync.dev](https://letterboxdsync.dev/)
+**What's new:** [Release notes for every version](https://letterboxdsync.dev/releases/)
 
 Automatically sync your Jellyfin watch history to your Letterboxd diary. Films are logged in real-time when you finish watching, with a daily scheduled sync as a safety net.
 
