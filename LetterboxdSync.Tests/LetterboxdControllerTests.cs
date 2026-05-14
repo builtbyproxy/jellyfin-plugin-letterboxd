@@ -235,6 +235,184 @@ public class LetterboxdControllerTests
         Assert.True(other.Enabled);
     }
 
+    // ----- GetAccounts / PutAccounts (multi-account, per-user) -----
+
+    [Fact]
+    public void GetAccounts_NoUserClaim_ReturnsBadRequest()
+    {
+        using var h = new ControllerTestHarness(currentUserId: null);
+
+        var result = h.Controller.GetAccounts();
+
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public void GetAccounts_ReturnsOnlyCallingUsersAccounts()
+    {
+        using var h = new ControllerTestHarness(currentUserId: UserId);
+        h.AddAccount(UserId, "mine-a");
+        h.AddAccount(UserId, "mine-b");
+        h.AddAccount(OtherUserId, "someone-else");
+
+        var result = h.Controller.GetAccounts();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var accounts = Prop<System.Collections.IEnumerable>(ok, "accounts")!;
+        var list = accounts.Cast<object>().ToList();
+        Assert.Equal(2, list.Count);
+        var usernames = list.Select(a => a.GetType().GetProperty("letterboxdUsername")!.GetValue(a)?.ToString()).ToHashSet();
+        Assert.Contains("mine-a", usernames);
+        Assert.Contains("mine-b", usernames);
+        Assert.DoesNotContain("someone-else", usernames);
+    }
+
+    [Fact]
+    public void GetAccounts_OrdersPrimaryFirst()
+    {
+        using var h = new ControllerTestHarness(currentUserId: UserId);
+        h.AddAccount(UserId, "secondary");
+        var primary = h.AddAccount(UserId, "primary");
+        primary.IsPrimary = true;
+
+        var result = h.Controller.GetAccounts();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var accounts = Prop<System.Collections.IEnumerable>(ok, "accounts")!;
+        var first = accounts.Cast<object>().First();
+        Assert.Equal("primary", first.GetType().GetProperty("letterboxdUsername")!.GetValue(first));
+    }
+
+    [Fact]
+    public void PutAccounts_NoUserClaim_ReturnsBadRequest()
+    {
+        using var h = new ControllerTestHarness(currentUserId: null);
+
+        var result = h.Controller.PutAccounts(new AccountsUpdateRequest());
+
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public void PutAccounts_NullAccountsList_ReturnsBadRequest()
+    {
+        using var h = new ControllerTestHarness(currentUserId: UserId);
+
+        var result = h.Controller.PutAccounts(new AccountsUpdateRequest { Accounts = null! });
+
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public void PutAccounts_EmptyUsername_ReturnsBadRequest()
+    {
+        using var h = new ControllerTestHarness(currentUserId: UserId);
+
+        var result = h.Controller.PutAccounts(new AccountsUpdateRequest
+        {
+            Accounts = new()
+            {
+                new AccountUpdateRequest { LetterboxdUsername = "ok" },
+                new AccountUpdateRequest { LetterboxdUsername = "   " }
+            }
+        });
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Contains("#2", Prop<string>(result, "error") ?? string.Empty);
+    }
+
+    [Fact]
+    public void PutAccounts_ReplacesCallingUsersAccounts()
+    {
+        using var h = new ControllerTestHarness(currentUserId: UserId);
+        h.AddAccount(UserId, "old-a");
+        h.AddAccount(UserId, "old-b");
+
+        var result = h.Controller.PutAccounts(new AccountsUpdateRequest
+        {
+            Accounts = new()
+            {
+                new AccountUpdateRequest { LetterboxdUsername = "new-1", Enabled = true, IsPrimary = true },
+                new AccountUpdateRequest { LetterboxdUsername = "new-2", Enabled = true }
+            }
+        });
+
+        Assert.IsType<OkObjectResult>(result);
+        var mine = h.Config.Accounts.Where(a => a.UserJellyfinId == UserId).ToList();
+        Assert.Equal(2, mine.Count);
+        var names = mine.Select(a => a.LetterboxdUsername).ToHashSet();
+        Assert.Equal(new[] { "new-1", "new-2" }.ToHashSet(), names);
+    }
+
+    [Fact]
+    public void PutAccounts_PreservesOtherUsersAccounts()
+    {
+        using var h = new ControllerTestHarness(currentUserId: UserId);
+        h.AddAccount(OtherUserId, "untouched", enabled: true);
+
+        h.Controller.PutAccounts(new AccountsUpdateRequest
+        {
+            Accounts = new() { new AccountUpdateRequest { LetterboxdUsername = "mine", Enabled = true } }
+        });
+
+        var other = h.Config.Accounts.Single(a => a.UserJellyfinId == OtherUserId);
+        Assert.Equal("untouched", other.LetterboxdUsername);
+        Assert.True(other.Enabled);
+    }
+
+    [Fact]
+    public void PutAccounts_StampsCallingUserIdOntoEveryRow()
+    {
+        using var h = new ControllerTestHarness(currentUserId: UserId);
+
+        // The request shape doesn't even carry UserJellyfinId, but a hostile or
+        // confused client might try to spoof one via reflection or a custom payload.
+        // The endpoint must overwrite to the calling user's id regardless.
+        h.Controller.PutAccounts(new AccountsUpdateRequest
+        {
+            Accounts = new() { new AccountUpdateRequest { LetterboxdUsername = "mine", Enabled = true } }
+        });
+
+        var mine = h.Config.Accounts.Single(a => a.LetterboxdUsername == "mine");
+        Assert.Equal(UserId, mine.UserJellyfinId);
+    }
+
+    [Fact]
+    public void PutAccounts_NormalisesPrimaryFlag_AutoPromotesFirstWhenNoneMarked()
+    {
+        using var h = new ControllerTestHarness(currentUserId: UserId);
+
+        h.Controller.PutAccounts(new AccountsUpdateRequest
+        {
+            Accounts = new()
+            {
+                new AccountUpdateRequest { LetterboxdUsername = "a", Enabled = true },
+                new AccountUpdateRequest { LetterboxdUsername = "b", Enabled = true }
+            }
+        });
+
+        var mine = h.Config.Accounts.Where(a => a.UserJellyfinId == UserId).ToList();
+        Assert.Single(mine.Where(a => a.IsPrimary));
+    }
+
+    [Fact]
+    public void PutAccounts_NormalisesPrimaryFlag_DemotesExtras()
+    {
+        using var h = new ControllerTestHarness(currentUserId: UserId);
+
+        h.Controller.PutAccounts(new AccountsUpdateRequest
+        {
+            Accounts = new()
+            {
+                new AccountUpdateRequest { LetterboxdUsername = "a", Enabled = true, IsPrimary = true },
+                new AccountUpdateRequest { LetterboxdUsername = "b", Enabled = true, IsPrimary = true }
+            }
+        });
+
+        var mine = h.Config.Accounts.Where(a => a.UserJellyfinId == UserId).ToList();
+        Assert.Single(mine.Where(a => a.IsPrimary));
+    }
+
     // ----- StartSync -----
 
     [Fact]

@@ -10,6 +10,27 @@ export type ReleaseNotes = {
 
 export const releaseNotes: ReleaseNotes[] = [
   {
+    version: '1.12.0',
+    headline: 'Multi-account support: one Jellyfin user, many Letterboxd accounts',
+    summary: 'Shared TV logins (e.g. two people on the same family Jellyfin profile) can now each have their own Letterboxd diary, ratings, and watchlist.',
+    highlights: {
+      new: [
+        'A Jellyfin user can link multiple Letterboxd accounts. Auto-sync (real-time and scheduled) fans out across every enabled account; one failing account never blocks the others.',
+        'The sidebar "My Letterboxd" page now has feature parity with the admin plugin page for per-account management: add, remove, reorder, test, and configure every account that belongs to your Jellyfin user, without needing admin access. (Admin-only things like the Jellyseerr server URL and editing other users\' accounts stay in the admin page.)',
+        "Per-account watchlist playlists. Default name is 'Letterboxd Watchlist ({letterboxdUsername})' so two accounts on one Jellyfin user get two separate playlists, with an optional per-account name override.",
+        "Review modal has a 'Post as' account selector when more than one account is enabled, defaulting to posting on all of them.",
+        'New IsPrimary flag on each account: used to break rating conflicts on diary import and as the preselected option in the review modal.',
+      ],
+      improvements: [
+        'Manual API endpoints (/Sync, /SyncWatchlist, /Review) accept an optional letterboxdUsername selector. Omit it to fan out across all enabled accounts.',
+        'Diary import unions played-state across all linked accounts and merges ratings with the primary account winning conflicts. Existing Jellyfin ratings are still preserved.',
+      ],
+      breaking: [
+        "Single-account users will see a new 'Letterboxd Watchlist (yourusername)' playlist created on the next watchlist sync. The old 'Letterboxd Watchlist' playlist is left untouched so you can delete or migrate at your leisure.",
+      ],
+    },
+  },
+  {
     version: '1.11.3',
     headline: 'Plain-English error and docs when Cloudflare 403s with cookies already set',
     highlights: {

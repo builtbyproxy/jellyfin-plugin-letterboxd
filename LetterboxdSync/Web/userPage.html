@@ -129,73 +129,12 @@
 
                 <!-- MY ACCOUNT TAB -->
                 <div id="tab-account" class="lb-tab-content" style="display:none;">
-                    <h3>Primary Letterboxd account</h3>
-                    <p class="c-muted" style="font-size:0.9em;">Connect your Letterboxd account to sync your watch history. If you have more than one Letterboxd account linked to this Jellyfin user, this page only edits the primary one. Use the admin link above to manage additional accounts.</p>
+                    <h3>Your Letterboxd accounts</h3>
+                    <p class="c-muted" style="font-size:0.9em;">Link one or more Letterboxd accounts to this Jellyfin user. Each gets its own diary, ratings, and watchlist; auto-sync fans out across every enabled account. When you have more than one, mark one as <em>primary</em> &mdash; it wins on rating-import conflicts and is preselected in the review modal.</p>
 
-                    <div class="lb-account">
-                        <div style="margin-bottom:0.7em;">
-                            <label class="lb-field">Letterboxd Username</label>
-                            <input type="text" id="lbUsername" />
-                        </div>
-                        <div style="margin-bottom:0.7em;">
-                            <label class="lb-field">Letterboxd Password</label>
-                            <input type="password" id="lbPassword" />
-                        </div>
-                        <div style="margin-bottom:0.7em;">
-                            <label class="lb-field">Raw Cookies <span class="c-muted">(optional, Cloudflare bypass)</span></label>
-                            <input type="text" id="rawCookies" placeholder="Paste cookie header if login gets 403" />
-                        </div>
-                        <div style="margin-bottom:0.7em;">
-                            <label class="lb-field">User-Agent <span class="c-muted">(optional, must match the browser used to copy cookies)</span></label>
-                            <input type="text" id="userAgent" placeholder="Leave blank for default (Firefox 134 on Windows)" />
-                            <div class="c-muted" style="font-size:0.8em;margin-top:0.3em;">Cloudflare ties the <code>cf_clearance</code> cookie to the exact User-Agent that solved the challenge. If you copied cookies from Chrome, paste Chrome's UA here.</div>
-                        </div>
+                    <div id="accountsList"></div>
 
-                        <div style="margin-top:1em;margin-bottom:0.5em;">
-                            <button type="button" class="lb-btn lb-btn-secondary" id="testBtn">Test Connection</button>
-                            <span id="testStatus" style="font-size:0.9em;margin-left:0.7em;"></span>
-                        </div>
-
-                        <h4 style="margin-top:1.5em;margin-bottom:0.5em;">Sync Preferences</h4>
-                        <div class="lb-checks">
-                            <label><input type="checkbox" id="accountEnabled" /><span class="lb-check-text">
-                                <span class="lb-check-title">Enabled</span>
-                                <span class="lb-check-desc">Master switch for your account. When unchecked, no diary, watchlist, or playback sync runs for you. Saved settings are kept.</span>
-                            </span></label>
-                            <label><input type="checkbox" id="syncFavorites" /><span class="lb-check-text">
-                                <span class="lb-check-title">Mark Jellyfin favourites as liked on Letterboxd</span>
-                                <span class="lb-check-desc">When a film is in your Jellyfin favourites, the diary entry on Letterboxd gets the red heart (liked). Otherwise it syncs as a plain watch.</span>
-                            </span></label>
-                            <label><input type="checkbox" id="enableDateFilter" /><span class="lb-check-text">
-                                <span class="lb-check-title">Only sync recently played films</span>
-                                <span class="lb-check-desc">Limit the catch-up sync to films watched within the last N days (set below). Useful on first run if you don't want to backfill years of history.</span>
-                            </span></label>
-                            <label><input type="checkbox" id="enableWatchlistSync" /><span class="lb-check-text">
-                                <span class="lb-check-title">Mirror Letterboxd watchlist as a Jellyfin playlist</span>
-                                <span class="lb-check-desc">Pulls your Letterboxd watchlist daily and mirrors it into a Jellyfin playlist named "Letterboxd Watchlist". Adds new films and removes ones taken off Letterboxd. Films not in your library are skipped.</span>
-                            </span></label>
-                            <label><input type="checkbox" id="autoRequestWatchlist" /><span class="lb-check-text">
-                                <span class="lb-check-title">Auto-request unmatched watchlist films via Jellyseerr</span>
-                                <span class="lb-check-desc">When a watchlisted film is not in the Jellyfin library, request it through Jellyseerr. The request is attributed to your Jellyseerr account (matched by your Jellyfin login). The admin must have configured Jellyseerr in the plugin settings.</span>
-                            </span></label>
-                            <label><input type="checkbox" id="enableDiaryImport" /><span class="lb-check-text">
-                                <span class="lb-check-title">Import Letterboxd diary as Jellyfin watched</span>
-                                <span class="lb-check-desc">Reverse direction: marks films in your Jellyfin library as played if they are already in your Letterboxd diary.</span>
-                            </span></label>
-                            <label><input type="checkbox" id="skipPreviouslySynced" /><span class="lb-check-text">
-                                <span class="lb-check-title">Skip films already synced locally</span>
-                                <span class="lb-check-desc">Use the plugin's own sync history to short-circuit the duplicate check, so we don't hit Letterboxd at all for films we already logged. Massively reduces Cloudflare blocks on large libraries. Recommended.</span>
-                            </span></label>
-                            <label><input type="checkbox" id="stopOnFailure" /><span class="lb-check-text">
-                                <span class="lb-check-title">Stop sync immediately on first failure</span>
-                                <span class="lb-check-desc">Halt your sync the moment a film fails (e.g. Cloudflare 403 or anti-flooding). Prevents wasted retries that further inflame Letterboxd's rate limits. Remaining films will be picked up next run, prioritising failed and never-attempted entries first.</span>
-                            </span></label>
-                        </div>
-                        <div id="dateFilterDaysContainer" style="display:none;margin-top:0.5em;">
-                            <label class="lb-field">Days to look back</label>
-                            <input type="number" id="dateFilterDays" min="1" max="365" value="7" />
-                        </div>
-                    </div>
+                    <button type="button" class="lb-btn lb-btn-secondary" id="addAccountBtn" style="margin-top:1em;">+ Add Account</button>
 
                     <div style="margin-top:1.5em;display:flex;align-items:center;gap:1em;">
                         <button type="button" class="lb-btn lb-btn-primary" id="saveBtn">Save</button>
@@ -318,59 +257,195 @@
                             });
                         },
 
+                        accountHtml: function () {
+                            return '<div class="account-entry lb-account" style="margin-bottom:1em;">'
+                                + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5em;">'
+                                + '<h4 style="margin:0;" class="accountHeading">Account</h4>'
+                                + '<button type="button" class="lb-btn lb-btn-danger removeAccountBtn">Remove</button></div>'
+                                + '<div style="margin-bottom:0.5em;"><label class="lb-field">Letterboxd Username</label>'
+                                + '<input type="text" class="lbUsername" /></div>'
+                                + '<div style="margin-bottom:0.5em;"><label class="lb-field">Letterboxd Password</label>'
+                                + '<input type="password" class="lbPassword" /></div>'
+                                + '<div style="margin-bottom:0.5em;"><label class="lb-field">Raw Cookies <span class="c-muted">(optional, Cloudflare bypass)</span></label>'
+                                + '<input type="text" class="rawCookies" placeholder="Paste cookie header if login gets 403" /></div>'
+                                + '<div style="margin-bottom:0.5em;"><label class="lb-field">User-Agent <span class="c-muted">(optional, must match the browser used to copy cookies)</span></label>'
+                                + '<input type="text" class="userAgent" placeholder="Leave blank for default (Firefox 134 on Windows)" />'
+                                + '<div class="c-muted" style="font-size:0.8em;margin-top:0.3em;">Cloudflare ties the <code>cf_clearance</code> cookie to the exact User-Agent that solved the challenge. If you copied cookies from Chrome, paste Chrome\'s UA here.</div></div>'
+                                + '<div style="margin-top:1em;margin-bottom:0.5em;">'
+                                + '<button type="button" class="lb-btn lb-btn-secondary testBtn">Test Connection</button>'
+                                + '<span class="testStatus" style="font-size:0.9em;margin-left:0.7em;"></span></div>'
+                                + '<h4 style="margin-top:1.5em;margin-bottom:0.5em;">Sync Preferences</h4>'
+                                + '<div class="lb-checks">'
+                                + '<label><input type="checkbox" class="accountEnabled" /><span class="lb-check-text">'
+                                + '<span class="lb-check-title">Enabled</span>'
+                                + '<span class="lb-check-desc">Master switch for this account. When unchecked, no diary, watchlist, or playback sync runs for it. Saved settings are kept.</span>'
+                                + '</span></label>'
+                                + '<label><input type="checkbox" class="isPrimary" /><span class="lb-check-text">'
+                                + '<span class="lb-check-title">Primary account</span>'
+                                + '<span class="lb-check-desc">When this Jellyfin user has more than one Letterboxd account linked, the primary one wins on rating-import conflicts and is preselected in the review modal. Only one primary per Jellyfin user is kept (the server demotes extras on save).</span>'
+                                + '</span></label>'
+                                + '<label><input type="checkbox" class="syncFavorites" /><span class="lb-check-text">'
+                                + '<span class="lb-check-title">Mark Jellyfin favourites as liked on Letterboxd</span>'
+                                + '<span class="lb-check-desc">When a film is in your Jellyfin favourites, the diary entry on Letterboxd gets the red heart (liked). Otherwise it syncs as a plain watch.</span>'
+                                + '</span></label>'
+                                + '<label><input type="checkbox" class="enableDateFilter" /><span class="lb-check-text">'
+                                + '<span class="lb-check-title">Only sync recently played films</span>'
+                                + '<span class="lb-check-desc">Limit the catch-up sync to films watched within the last N days (set below). Useful on first run if you don\'t want to backfill years of history.</span>'
+                                + '</span></label>'
+                                + '<label><input type="checkbox" class="enableWatchlistSync" /><span class="lb-check-text">'
+                                + '<span class="lb-check-title">Mirror Letterboxd watchlist as a Jellyfin playlist</span>'
+                                + '<span class="lb-check-desc">Pulls this account\'s Letterboxd watchlist daily and mirrors it into a Jellyfin playlist. With multiple accounts each gets its own playlist named "Letterboxd Watchlist (username)" by default. Adds new films and removes ones taken off Letterboxd. Films not in your library are skipped.</span>'
+                                + '</span></label>'
+                                + '<label><input type="checkbox" class="autoRequestWatchlist" /><span class="lb-check-text">'
+                                + '<span class="lb-check-title">Auto-request unmatched watchlist films via Jellyseerr</span>'
+                                + '<span class="lb-check-desc">When a watchlisted film is not in the Jellyfin library, request it through Jellyseerr. The request is attributed to your Jellyseerr account. Requires Jellyseerr to be configured in the admin plugin settings.</span>'
+                                + '</span></label>'
+                                + '<label><input type="checkbox" class="mirrorJellyseerrWatchlist" /><span class="lb-check-text">'
+                                + '<span class="lb-check-title">Mirror Letterboxd watchlist into Jellyseerr watchlist</span>'
+                                + '<span class="lb-check-desc">Two-way mirror against your Jellyseerr user\'s own watchlist. Only takes effect on the primary account, since the Jellyseerr watchlist is per-Jellyfin-user (the secondary account\'s flag is silently ignored to avoid the two accounts overwriting each other). Movies only, so manually-added Jellyseerr TV is left alone.</span>'
+                                + '</span></label>'
+                                + '<label><input type="checkbox" class="enableDiaryImport" /><span class="lb-check-text">'
+                                + '<span class="lb-check-title">Import Letterboxd diary as Jellyfin watched</span>'
+                                + '<span class="lb-check-desc">Reverse direction: marks films in your Jellyfin library as played if they are already in this account\'s Letterboxd diary. With multiple accounts the played-state is unioned across them.</span>'
+                                + '</span></label>'
+                                + '<label><input type="checkbox" class="skipPreviouslySynced" /><span class="lb-check-text">'
+                                + '<span class="lb-check-title">Skip films already synced locally</span>'
+                                + '<span class="lb-check-desc">Use the plugin\'s own sync history to short-circuit the duplicate check, so we don\'t hit Letterboxd at all for films we already logged. Massively reduces Cloudflare blocks on large libraries. Recommended.</span>'
+                                + '</span></label>'
+                                + '<label><input type="checkbox" class="stopOnFailure" /><span class="lb-check-text">'
+                                + '<span class="lb-check-title">Stop sync immediately on first failure</span>'
+                                + '<span class="lb-check-desc">Halt this account\'s sync the moment a film fails (e.g. Cloudflare 403 or anti-flooding). Prevents wasted retries that further inflame Letterboxd\'s rate limits. Remaining films will be picked up next run, prioritising failed and never-attempted entries first.</span>'
+                                + '</span></label>'
+                                + '</div>'
+                                + '<div class="dateFilterDaysContainer" style="display:none;margin-top:0.5em;">'
+                                + '<label class="lb-field">Days to look back</label>'
+                                + '<input type="number" class="dateFilterDays" min="1" max="365" value="7" /></div>'
+                                + '<div style="margin-top:0.5em;">'
+                                + '<label class="lb-field">Watchlist Playlist Name <span class="c-muted">(optional)</span></label>'
+                                + '<input type="text" class="playlistName" placeholder="Letterboxd Watchlist (username)" />'
+                                + '<div class="c-muted" style="font-size:0.8em;margin-top:0.3em;">Override the playlist name for this account\'s mirrored Letterboxd watchlist. Leave blank to use the default pattern.</div></div>'
+                                + '</div>';
+                        },
+
+                        wireAccountEntry: function (entry, account) {
+                            var self = this;
+                            if (account) {
+                                entry.querySelector('.lbUsername').value = account.letterboxdUsername || '';
+                                entry.querySelector('.lbPassword').value = account.letterboxdPassword || '';
+                                entry.querySelector('.rawCookies').value = account.rawCookies || '';
+                                entry.querySelector('.userAgent').value = account.userAgent || '';
+                                entry.querySelector('.accountEnabled').checked = account.enabled === true;
+                                entry.querySelector('.isPrimary').checked = account.isPrimary === true;
+                                entry.querySelector('.syncFavorites').checked = account.syncFavorites === true;
+                                entry.querySelector('.enableDateFilter').checked = account.enableDateFilter === true;
+                                entry.querySelector('.dateFilterDays').value = account.dateFilterDays || 7;
+                                entry.querySelector('.enableWatchlistSync').checked = account.enableWatchlistSync === true;
+                                entry.querySelector('.autoRequestWatchlist').checked = account.autoRequestWatchlist === true;
+                                entry.querySelector('.mirrorJellyseerrWatchlist').checked = account.mirrorJellyseerrWatchlist === true;
+                                entry.querySelector('.enableDiaryImport').checked = account.enableDiaryImport === true;
+                                entry.querySelector('.skipPreviouslySynced').checked = account.skipPreviouslySynced !== false;
+                                entry.querySelector('.stopOnFailure').checked = account.stopOnFailure === true;
+                                entry.querySelector('.playlistName').value = account.playlistName || '';
+                                if (account.enableDateFilter) entry.querySelector('.dateFilterDaysContainer').style.display = '';
+                                self.updateAccountHeading(entry);
+                            } else {
+                                entry.querySelector('.accountEnabled').checked = true;
+                                entry.querySelector('.skipPreviouslySynced').checked = true;
+                                entry.querySelector('.accountHeading').textContent = 'New account';
+                            }
+                            entry.querySelector('.enableDateFilter').addEventListener('change', function () {
+                                entry.querySelector('.dateFilterDaysContainer').style.display = this.checked ? '' : 'none';
+                            });
+                            entry.querySelector('.lbUsername').addEventListener('input', function () { self.updateAccountHeading(entry); });
+                            entry.querySelector('.isPrimary').addEventListener('change', function () { self.updateAccountHeading(entry); });
+                            entry.querySelector('.removeAccountBtn').addEventListener('click', function () { entry.remove(); });
+                            entry.querySelector('.testBtn').addEventListener('click', function () { self.testConnection(entry); });
+                        },
+
+                        updateAccountHeading: function (entry) {
+                            var name = entry.querySelector('.lbUsername').value.trim();
+                            var primary = entry.querySelector('.isPrimary').checked;
+                            var label = name || 'New account';
+                            if (primary) label += ' (primary)';
+                            entry.querySelector('.accountHeading').textContent = label;
+                        },
+
+                        addAccount: function (account) {
+                            var container = document.getElementById('accountsList');
+                            container.insertAdjacentHTML('beforeend', this.accountHtml());
+                            this.wireAccountEntry(container.lastElementChild, account);
+                        },
+
                         loadAccount: function () {
                             var self = this;
-                            self.apiFetch('Jellyfin.Plugin.LetterboxdSync/Account')
+                            self.apiFetch('Jellyfin.Plugin.LetterboxdSync/Accounts')
                             .then(function (r) { return r.json(); })
-                            .then(function (a) {
-                                document.getElementById('lbUsername').value = a.letterboxdUsername || '';
-                                document.getElementById('lbPassword').value = a.letterboxdPassword || '';
-                                document.getElementById('rawCookies').value = a.rawCookies || '';
-                                document.getElementById('userAgent').value = a.userAgent || '';
-                                document.getElementById('accountEnabled').checked = a.enabled === true;
-                                document.getElementById('syncFavorites').checked = a.syncFavorites === true;
-                                document.getElementById('enableDateFilter').checked = a.enableDateFilter === true;
-                                document.getElementById('dateFilterDays').value = a.dateFilterDays || 7;
-                                document.getElementById('enableWatchlistSync').checked = a.enableWatchlistSync === true;
-                                document.getElementById('autoRequestWatchlist').checked = a.autoRequestWatchlist === true;
-                                document.getElementById('enableDiaryImport').checked = a.enableDiaryImport === true;
-                                document.getElementById('skipPreviouslySynced').checked = a.skipPreviouslySynced !== false;
-                                document.getElementById('stopOnFailure').checked = a.stopOnFailure === true;
-                                document.getElementById('dateFilterDaysContainer').style.display = a.enableDateFilter ? '' : 'none';
+                            .then(function (data) {
+                                var list = document.getElementById('accountsList');
+                                list.innerHTML = '';
+                                var accounts = (data && data.accounts) || [];
+                                accounts.forEach(function (a) { self.addAccount(a); });
+                                if (accounts.length === 0) {
+                                    // First-time setup: render an empty row so the user has something
+                                    // to fill in rather than staring at the +Add button alone.
+                                    self.addAccount(null);
+                                }
                             })
                             .catch(function (err) {
-                                console.error('[LetterboxdSync] Failed to load account:', err);
+                                console.error('[LetterboxdSync] Failed to load accounts:', err);
                             });
+                        },
+
+                        collectAccounts: function () {
+                            var accounts = [];
+                            document.querySelectorAll('#accountsList .account-entry').forEach(function (entry) {
+                                accounts.push({
+                                    letterboxdUsername: entry.querySelector('.lbUsername').value.trim(),
+                                    letterboxdPassword: entry.querySelector('.lbPassword').value,
+                                    rawCookies: entry.querySelector('.rawCookies').value || null,
+                                    userAgent: entry.querySelector('.userAgent').value || null,
+                                    enabled: entry.querySelector('.accountEnabled').checked,
+                                    syncFavorites: entry.querySelector('.syncFavorites').checked,
+                                    enableDateFilter: entry.querySelector('.enableDateFilter').checked,
+                                    dateFilterDays: parseInt(entry.querySelector('.dateFilterDays').value, 10) || 7,
+                                    enableWatchlistSync: entry.querySelector('.enableWatchlistSync').checked,
+                                    autoRequestWatchlist: entry.querySelector('.autoRequestWatchlist').checked,
+                                    mirrorJellyseerrWatchlist: entry.querySelector('.mirrorJellyseerrWatchlist').checked,
+                                    enableDiaryImport: entry.querySelector('.enableDiaryImport').checked,
+                                    skipPreviouslySynced: entry.querySelector('.skipPreviouslySynced').checked,
+                                    stopOnFailure: entry.querySelector('.stopOnFailure').checked,
+                                    isPrimary: entry.querySelector('.isPrimary').checked,
+                                    playlistName: entry.querySelector('.playlistName').value.trim() || null
+                                });
+                            });
+                            return accounts;
                         },
 
                         saveAccount: function () {
                             var self = this;
                             var saveBtn = document.getElementById('saveBtn');
                             var saveStatus = document.getElementById('saveStatus');
+                            var accounts = self.collectAccounts();
+
+                            // Reject empty rows client-side so the server doesn't have to send a 400
+                            // for a UX problem we can describe inline.
+                            for (var i = 0; i < accounts.length; i++) {
+                                if (!accounts[i].letterboxdUsername) {
+                                    saveStatus.innerHTML = '<span class="c-red">Account #' + (i + 1) + ' is missing a Letterboxd username</span>';
+                                    return;
+                                }
+                            }
+
                             saveBtn.disabled = true;
                             saveStatus.textContent = 'Saving...';
 
-                            var data = {
-                                letterboxdUsername: document.getElementById('lbUsername').value,
-                                letterboxdPassword: document.getElementById('lbPassword').value,
-                                rawCookies: document.getElementById('rawCookies').value || null,
-                                userAgent: document.getElementById('userAgent').value || null,
-                                enabled: document.getElementById('accountEnabled').checked,
-                                syncFavorites: document.getElementById('syncFavorites').checked,
-                                enableDateFilter: document.getElementById('enableDateFilter').checked,
-                                dateFilterDays: parseInt(document.getElementById('dateFilterDays').value, 10) || 7,
-                                enableWatchlistSync: document.getElementById('enableWatchlistSync').checked,
-                                autoRequestWatchlist: document.getElementById('autoRequestWatchlist').checked,
-                                enableDiaryImport: document.getElementById('enableDiaryImport').checked,
-                                skipPreviouslySynced: document.getElementById('skipPreviouslySynced').checked,
-                                stopOnFailure: document.getElementById('stopOnFailure').checked
-                            };
-
-                            self.apiPut('Jellyfin.Plugin.LetterboxdSync/Account', data)
+                            self.apiPut('Jellyfin.Plugin.LetterboxdSync/Accounts', { accounts: accounts })
                             .then(function (r) {
                                 if (r.ok) {
                                     saveStatus.innerHTML = '<span class="c-green">Saved!</span>';
                                     saveBtn.disabled = false;
+                                    // Reload to pick up server-side normalisation (e.g. auto-promoted primary).
+                                    self.loadAccount();
                                 } else {
                                     r.json().then(function (d) {
                                         saveStatus.innerHTML = '<span class="c-red">' + (d.error || 'Failed to save') + '</span>';
@@ -382,14 +457,15 @@
                                 saveStatus.innerHTML = '<span class="c-red">Error: ' + err.message + '</span>';
                                 saveBtn.disabled = false;
                             });
+                            return;
                         },
 
-                        testConnection: function () {
+                        testConnection: function (entry) {
                             var self = this;
-                            var testBtn = document.getElementById('testBtn');
-                            var testStatus = document.getElementById('testStatus');
-                            var username = document.getElementById('lbUsername').value;
-                            var password = document.getElementById('lbPassword').value;
+                            var testBtn = entry.querySelector('.testBtn');
+                            var testStatus = entry.querySelector('.testStatus');
+                            var username = entry.querySelector('.lbUsername').value;
+                            var password = entry.querySelector('.lbPassword').value;
 
                             if (!username || !password) {
                                 testStatus.innerHTML = '<span class="c-red">Enter username and password first</span>';
@@ -402,8 +478,8 @@
                             self.apiPost('Jellyfin.Plugin.LetterboxdSync/TestConnection', {
                                 letterboxdUsername: username,
                                 letterboxdPassword: password,
-                                rawCookies: document.getElementById('rawCookies').value || null,
-                                userAgent: document.getElementById('userAgent').value || null
+                                rawCookies: entry.querySelector('.rawCookies').value || null,
+                                userAgent: entry.querySelector('.userAgent').value || null
                             })
                             .then(function (r) { return r.json(); })
                             .then(function (data) {
@@ -693,7 +769,7 @@
 
                             // Event listeners
                             document.getElementById('saveBtn').addEventListener('click', function () { self.saveAccount(); });
-                            document.getElementById('testBtn').addEventListener('click', function () { self.testConnection(); });
+                            document.getElementById('addAccountBtn').addEventListener('click', function () { self.addAccount(null); });
                             document.getElementById('runSyncBtn').addEventListener('click', function () { self.runSync(); });
                             document.getElementById('runWatchlistSyncBtn').addEventListener('click', function () { self.runWatchlistSync(); });
                             document.getElementById('historyFirst').addEventListener('click', function () { self.gotoHistoryPage(1); });
@@ -704,9 +780,6 @@
                             document.getElementById('reviewSubmit').addEventListener('click', function () { self.submitReview(); });
                             document.getElementById('reviewRewatch').addEventListener('change', function () {
                                 document.getElementById('rewatchDateRow').style.display = this.checked ? '' : 'none';
-                            });
-                            document.getElementById('enableDateFilter').addEventListener('change', function () {
-                                document.getElementById('dateFilterDaysContainer').style.display = this.checked ? '' : 'none';
                             });
 
                             // Star rating

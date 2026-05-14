@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.12.0.0",
+        "changelog": "Multi-account support: one Jellyfin user can now link multiple Letterboxd accounts. Auto-sync (real-time on playback completion and scheduled) fans out across every enabled account, with per-account failures isolated. Manual /Sync, /SyncWatchlist, and /Review endpoints accept an optional letterboxdUsername selector and fan out by default when omitted. Diary import unions played-state across all accounts and merges ratings with the primary account winning conflicts (existing Jellyfin ratings are still preserved). Watchlist playlists are now per-account (default name: 'Letterboxd Watchlist ({letterboxdUsername})', overridable per account). New IsPrimary flag on each account, normalised on save (at most one primary per Jellyfin user). UI: the sidebar 'My Letterboxd' page now has feature parity with the admin page for per-account management (add, remove, test, configure every account belonging to your Jellyfin user without admin access). Review modal exposes a 'Post as' account selector when more than one account is enabled, defaulting to all accounts. Behaviour change: existing single-account users will see a new per-account watchlist playlist created on first sync after upgrade, the old 'Letterboxd Watchlist' playlist is left untouched.",
+        "targetAbi": "10.11.0.0",
+        "sourceUrl": "https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/releases/download/v1.12.0/jellyfin-plugin-letterboxd-v1.12.0.zip",
+        "checksum": "PLACEHOLDER",
+        "timestamp": "2026-05-14T00:00:00Z"
+      },
+      {
         "version": "1.11.3.0",
         "changelog": "Docs: when a Cloudflare 403 happens after you've already pasted Raw Cookies and a matching User-Agent, the plugin error message and README now explain why (cf_clearance is short-lived, pinned to the IP that solved the challenge, and the connection itself is TLS-fingerprinted) and what to try. Addresses the dead-end case reported in #34. No plugin behaviour changes.",
         "targetAbi": "10.11.0.0",

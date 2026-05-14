@@ -300,6 +300,116 @@ public class LetterboxdController : ControllerBase
         return Ok(new { success = true });
     }
 
+    /// <summary>
+    /// Returns every Letterboxd account belonging to the calling Jellyfin user, in
+    /// config order with primary first. Multi-account companion to the single-account
+    /// /Account endpoint: the userPage uses this to render the full list of accounts
+    /// the user can edit on their own sidebar page.
+    /// </summary>
+    [HttpGet("Accounts")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public ActionResult GetAccounts()
+    {
+        var userId = GetCurrentUserId();
+        if (string.IsNullOrEmpty(userId))
+            return BadRequest(new { error = "Could not determine user" });
+
+        var accounts = Config.Accounts
+            .Where(a => a.UserJellyfinId == userId)
+            .OrderByDescending(a => a.IsPrimary)
+            .Select(a => new
+            {
+                letterboxdUsername = a.LetterboxdUsername,
+                letterboxdPassword = a.LetterboxdPassword,
+                rawCookies = a.RawCookies,
+                userAgent = a.UserAgent,
+                enabled = a.Enabled,
+                syncFavorites = a.SyncFavorites,
+                enableDateFilter = a.EnableDateFilter,
+                dateFilterDays = a.DateFilterDays,
+                enableWatchlistSync = a.EnableWatchlistSync,
+                enableDiaryImport = a.EnableDiaryImport,
+                autoRequestWatchlist = a.AutoRequestWatchlist,
+                mirrorJellyseerrWatchlist = a.MirrorJellyseerrWatchlist,
+                skipPreviouslySynced = a.SkipPreviouslySynced,
+                stopOnFailure = a.StopOnFailure,
+                isPrimary = a.IsPrimary,
+                playlistName = a.PlaylistName
+            })
+            .ToList();
+
+        return Ok(new { accounts });
+    }
+
+    /// <summary>
+    /// Bulk-replace the calling user's set of Letterboxd accounts. Accounts owned by
+    /// other Jellyfin users are preserved (security: a non-admin user cannot touch
+    /// another user's row). Each submitted account is stamped with the calling user's
+    /// id regardless of what the request body claimed. NormalisePrimaryFlags runs after
+    /// so the single-primary-per-user invariant holds across the save.
+    /// </summary>
+    [HttpPut("Accounts")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public ActionResult PutAccounts([FromBody] AccountsUpdateRequest request)
+    {
+        var userId = GetCurrentUserId();
+        if (string.IsNullOrEmpty(userId))
+            return BadRequest(new { error = "Could not determine user" });
+
+        if (request?.Accounts == null)
+            return BadRequest(new { error = "accounts is required" });
+
+        // Reject empty username up front so a malformed row doesn't silently produce
+        // a half-broken account that fails authentication later.
+        for (var i = 0; i < request.Accounts.Count; i++)
+        {
+            if (string.IsNullOrWhiteSpace(request.Accounts[i].LetterboxdUsername))
+                return BadRequest(new { error = $"Account #{i + 1} is missing a Letterboxd username" });
+        }
+
+        // Preserve every account that doesn't belong to the calling user. The admin
+        // page is the only path that should touch other users' rows; this endpoint
+        // is per-user scope.
+        var preserved = Config.Accounts.Where(a => a.UserJellyfinId != userId).ToList();
+
+        var mine = new List<Account>();
+        foreach (var req in request.Accounts)
+        {
+            mine.Add(new Account
+            {
+                UserJellyfinId = userId,
+                LetterboxdUsername = req.LetterboxdUsername,
+                LetterboxdPassword = req.LetterboxdPassword,
+                RawCookies = req.RawCookies,
+                UserAgent = req.UserAgent,
+                Enabled = req.Enabled,
+                SyncFavorites = req.SyncFavorites,
+                EnableDateFilter = req.EnableDateFilter,
+                DateFilterDays = req.DateFilterDays,
+                EnableWatchlistSync = req.EnableWatchlistSync,
+                EnableDiaryImport = req.EnableDiaryImport,
+                AutoRequestWatchlist = req.AutoRequestWatchlist,
+                MirrorJellyseerrWatchlist = req.MirrorJellyseerrWatchlist,
+                SkipPreviouslySynced = req.SkipPreviouslySynced,
+                StopOnFailure = req.StopOnFailure,
+                IsPrimary = req.IsPrimary,
+                PlaylistName = string.IsNullOrWhiteSpace(req.PlaylistName) ? null : req.PlaylistName.Trim()
+            });
+        }
+
+        Config.Accounts.Clear();
+        Config.Accounts.AddRange(preserved);
+        Config.Accounts.AddRange(mine);
+
+        Config.NormalisePrimaryFlags();
+        Plugin.Instance!.SaveConfiguration();
+
+        _logger.LogInformation("User {UserId} saved {Count} Letterboxd account(s) via /Accounts", userId, mine.Count);
+        return Ok(new { success = true, count = mine.Count });
+    }
+
     [HttpPost("TestConnection")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]

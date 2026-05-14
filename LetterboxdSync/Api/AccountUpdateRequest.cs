@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace LetterboxdSync.Api;
 
 public class AccountUpdateRequest
@@ -33,6 +35,16 @@ public class AccountUpdateRequest
     public bool IsPrimary { get; set; }
 
     public string? PlaylistName { get; set; }
+}
+
+/// <summary>
+/// Bulk-replace payload for the per-user multi-account endpoint. The caller submits
+/// the full set of accounts they want for themselves; the server ignores any
+/// UserJellyfinId in the request and stamps every entry with the calling user.
+/// </summary>
+public class AccountsUpdateRequest
+{
+    public List<AccountUpdateRequest> Accounts { get; set; } = new List<AccountUpdateRequest>();
 }
 
 public class TestConnectionRequest
