@@ -365,6 +365,52 @@ public class LetterboxdApiClient : ILetterboxdService
         _http.Dispose();
     }
 
+    // --- Test-only helpers (InternalsVisibleTo LetterboxdSync.Tests) ---
+
+    /// <summary>
+    /// Deletes every diary log entry the authenticated user has for the given film LID.
+    /// Used by the integration test suite to clean up after a write so the test account
+    /// stays predictable across runs. Best-effort: per-entry failures are swallowed and
+    /// logged but the loop continues. Not on ILetterboxdService because production sync
+    /// paths never want to delete user data.
+    /// </summary>
+    internal async Task DeleteAllLogEntriesForFilmAsync(string filmLid)
+    {
+        EnsureAuthenticated();
+
+        var listResponse = await SendSignedAsync(HttpMethod.Get, "/log-entries",
+            queryParams: $"member={Uri.EscapeDataString(_memberId)}&film={Uri.EscapeDataString(filmLid)}&perPage=50",
+            authenticated: true).ConfigureAwait(false);
+
+        if (!listResponse.IsSuccessStatusCode) return;
+
+        var json = await listResponse.Content.ReadAsStringAsync().ConfigureAwait(false);
+        using var doc = JsonDocument.Parse(json);
+        if (!doc.RootElement.TryGetProperty("items", out var items)) return;
+
+        foreach (var item in items.EnumerateArray())
+        {
+            if (!item.TryGetProperty("id", out var idEl)) continue;
+            var entryId = idEl.GetString();
+            if (string.IsNullOrEmpty(entryId)) continue;
+
+            try
+            {
+                // Letterboxd splits the resource path: /log-entries (collection, GET/POST)
+                // vs /log-entry/{id} (individual, GET/PATCH/DELETE). Plural-DELETE returns 404.
+                var del = await SendSignedAsync(HttpMethod.Delete,
+                    $"/log-entry/{Uri.EscapeDataString(entryId)}", authenticated: true)
+                    .ConfigureAwait(false);
+                if (!del.IsSuccessStatusCode)
+                    _logger.LogWarning("Cleanup: DELETE /log-entry/{Id} returned {Status}", entryId, del.StatusCode);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("Cleanup: DELETE /log-entries/{Id} threw: {Message}", entryId, ex.Message);
+            }
+        }
+    }
+
     // --- Private helpers ---
 
     private async Task<HttpResponseMessage> SendSignedAsync(HttpMethod method, string path,

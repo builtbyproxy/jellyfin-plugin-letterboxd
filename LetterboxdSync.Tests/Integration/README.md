@@ -51,17 +51,30 @@ are for pre-release sanity checks and reproducing live bugs.
 - Do not paste credentials into commit messages, PR descriptions, issues, or
   any markdown that lands in the repo or its history.
 
-## Why no write tests yet
+## Write tests
 
-`ILetterboxdService` has no `DeleteDiaryEntry` API, so a test that posts a
-diary entry leaves residue on the test account between runs. Write coverage is
-deferred until either (a) we add a delete path, or (b) we accept periodic
-manual cleanup on the test account. Until then, the live tests are read-only
-(`Authenticate`, `LookupFilmByTmdbId`, `GetWatchlistTmdbIds`,
-`GetDiaryFilmEntries`, `GetDiaryInfo`).
+Write coverage uses an internal cleanup helper (`LetterboxdApiClient.
+DeleteAllLogEntriesForFilmAsync`, exposed via `InternalsVisibleTo`) that
+removes the diary entries the test created via `DELETE /log-entry/{id}`.
+Tests are wrapped in `try/finally` so cleanup runs even on assertion failure.
+The test account stays predictable across runs.
+
+Note: cleanup is API-only. The scraping fallback path in
+`ScrapingLetterboxdService` does not implement delete; write tests will skip
+themselves if the API auth fails for the test account.
 
 ## CI
 
-These tests do **not** run in GitHub Actions today. Wiring them up requires
-adding the credentials as repository secrets and adjusting `release.yml` /
-the CI workflow. Treat that as a separate change.
+A manual-only GitHub Actions workflow lives at
+`.github/workflows/integration.yml`. It runs on `workflow_dispatch` (Actions
+tab → "Integration tests (live Letterboxd)" → Run workflow), pulling
+`LETTERBOXD_TEST_USERNAME`/`PASSWORD` from repository secrets. The default
+`ci.yml` workflow filters integration tests out so push/PR runs stay green
+without secrets.
+
+To wire up:
+
+1. Repo Settings → Secrets and variables → Actions → New repository secret
+2. Add `LETTERBOXD_TEST_USERNAME` and `LETTERBOXD_TEST_PASSWORD` (and
+   optionally `LETTERBOXD_TEST_RAW_COOKIES` / `LETTERBOXD_TEST_USER_AGENT`)
+3. Trigger via the Actions tab when you want a live run

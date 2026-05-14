@@ -1,0 +1,46 @@
+name: Integration tests (live Letterboxd)
+
+# Manual-only. These tests hit real letterboxd.com using a dedicated test
+# account, write to its diary, and clean up after themselves. Cost is low but
+# non-zero (Cloudflare quota, account-side log entries that briefly exist).
+# Wire credentials at:
+#   Settings → Secrets and variables → Actions → New repository secret
+# Secrets used:
+#   LETTERBOXD_TEST_USERNAME  — required
+#   LETTERBOXD_TEST_PASSWORD  — required
+#   LETTERBOXD_TEST_RAW_COOKIES  — optional, only if Cloudflare 403s without them
+#   LETTERBOXD_TEST_USER_AGENT  — optional, must match the browser the cookies came from
+on:
+  workflow_dispatch:
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build -c Release --no-restore
+
+      - name: Run integration tests
+        env:
+          LETTERBOXD_TEST_USERNAME: ${{ secrets.LETTERBOXD_TEST_USERNAME }}
+          LETTERBOXD_TEST_PASSWORD: ${{ secrets.LETTERBOXD_TEST_PASSWORD }}
+          LETTERBOXD_TEST_RAW_COOKIES: ${{ secrets.LETTERBOXD_TEST_RAW_COOKIES }}
+          LETTERBOXD_TEST_USER_AGENT: ${{ secrets.LETTERBOXD_TEST_USER_AGENT }}
+        run: |
+          if [ -z "$LETTERBOXD_TEST_USERNAME" ] || [ -z "$LETTERBOXD_TEST_PASSWORD" ]; then
+            echo "::error::LETTERBOXD_TEST_USERNAME and LETTERBOXD_TEST_PASSWORD secrets are required."
+            echo "Set them under Settings → Secrets and variables → Actions on this repo."
+            exit 1
+          fi
+          dotnet test -c Release --no-build --verbosity normal --filter "Category=Integration"

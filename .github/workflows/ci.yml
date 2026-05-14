@@ -27,7 +27,11 @@ jobs:
       - name: Test
         # XPlat Code Coverage uses coverlet.collector (already a test-project dep)
         # to emit Cobertura XML under TestResults/<guid>/coverage.cobertura.xml.
-        run: dotnet test -c Release --no-build --verbosity normal --collect:"XPlat Code Coverage" --results-directory ./TestResults
+        # Integration tests are filtered out: they hit live Letterboxd and would
+        # skip silently here without secrets, but excluding them keeps the run
+        # honest about what was exercised. The integration.yml workflow runs them
+        # on demand with credentials wired in.
+        run: dotnet test -c Release --no-build --verbosity normal --collect:"XPlat Code Coverage" --results-directory ./TestResults --filter "Category!=Integration"
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
