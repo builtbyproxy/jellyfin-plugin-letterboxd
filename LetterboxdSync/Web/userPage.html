@@ -174,6 +174,13 @@
                             <label class="c-muted"><input type="checkbox" id="reviewSpoilers" /> Contains spoilers</label>
                             <label class="c-muted"><input type="checkbox" id="reviewRewatch" /> This is a rewatch</label>
                         </div>
+                        <div id="reviewAccountRow" style="display:none;margin-top:0.7em;">
+                            <label style="display:block;opacity:0.5;font-size:0.85em;margin-bottom:0.2em;">Post as</label>
+                            <select id="reviewAccount" style="min-width:240px;">
+                                <option value="">All my Letterboxd accounts</option>
+                            </select>
+                            <span class="c-muted" style="font-size:0.8em;display:block;margin-top:0.3em;">Defaults to posting on every linked Letterboxd account. Pick one to limit to that account only.</span>
+                        </div>
                         <div id="rewatchDateRow" style="display:none;margin-top:0.5em;">
                             <label style="display:block;opacity:0.5;font-size:0.85em;margin-bottom:0.2em;">Date watched</label>
                             <input type="date" id="reviewDate" style="padding:0.4em;background:rgba(255,255,255,0.06);color:inherit;border:1px solid rgba(255,255,255,0.1);border-radius:4px;" />
@@ -688,7 +695,35 @@
                             document.getElementById('ratingLabel').textContent = 'No rating';
                             document.querySelectorAll('#starRating span').forEach(function (s) { s.classList.remove('filled'); s.innerHTML = '&#9734;'; });
                             document.getElementById('reviewStatus').textContent = '';
+                            this.populateReviewAccountDropdown();
                             document.getElementById('reviewModal').style.display = 'block';
+                        },
+
+                        // Show the "Post as" row only when the current Jellyfin user has more than
+                        // one enabled Letterboxd account. The empty-value first option fans out to
+                        // every account; named options post to that one only. Primary first so it
+                        // matches the ordering in the rest of the UI.
+                        populateReviewAccountDropdown: function () {
+                            var sel = document.getElementById('reviewAccount');
+                            var row = document.getElementById('reviewAccountRow');
+                            if (!sel || !row) return;
+                            sel.innerHTML = '<option value="">All my Letterboxd accounts</option>';
+
+                            this.apiFetch('Jellyfin.Plugin.LetterboxdSync/Accounts')
+                            .then(function (r) { return r.json(); })
+                            .then(function (data) {
+                                var mine = ((data && data.accounts) || []).filter(function (a) { return a.enabled; });
+                                mine.sort(function (a, b) {
+                                    return (b.isPrimary ? 1 : 0) - (a.isPrimary ? 1 : 0);
+                                });
+                                mine.forEach(function (a) {
+                                    var label = a.letterboxdUsername + (a.isPrimary ? ' (primary)' : '');
+                                    sel.insertAdjacentHTML('beforeend',
+                                        '<option value="' + (a.letterboxdUsername || '').replace(/"/g, '&quot;') + '">' + label + '</option>');
+                                });
+                                row.style.display = mine.length >= 2 ? '' : 'none';
+                            })
+                            .catch(function () { row.style.display = 'none'; });
                         },
 
                         submitReview: function () {
@@ -705,6 +740,10 @@
                             var ratingVal = document.getElementById('reviewRating').value;
                             var rating = ratingVal ? parseFloat(ratingVal) : null;
 
+                            // Empty string means fan out to every linked account; a username
+                            // restricts the post to that one account only.
+                            var lbUser = (document.getElementById('reviewAccount').value || '').trim();
+
                             self.apiPost('Jellyfin.Plugin.LetterboxdSync/Review', {
                                 filmSlug: self.currentSlug,
                                 tmdbId: self.currentTmdbId || null,
@@ -712,7 +751,8 @@
                                 containsSpoilers: document.getElementById('reviewSpoilers').checked,
                                 isRewatch: isRewatch,
                                 date: isRewatch && date ? date : null,
-                                rating: rating
+                                rating: rating,
+                                letterboxdUsername: lbUser || null
                             })
                             .then(function (r) { return r.json(); })
                             .then(function (data) {
