@@ -260,9 +260,25 @@ public class WatchlistSyncRunner
 
         if (account.MirrorJellyseerrWatchlist)
         {
-            SyncProgress.SetPhase($"Mirroring Jellyseerr watchlist for {user.Username}");
-            await MirrorJellyseerrWatchlistAsync(jellyseerr!, jellyseerrUserId.Value, tmdbIds, user.Username!, cancellationToken)
-                .ConfigureAwait(false);
+            // The Jellyseerr watchlist is keyed by Jellyfin user, not by Letterboxd
+            // account: running the mirror once per account would have each account
+            // overwrite the previous one's diff (toRemove = Jellyseerr - thisAccount
+            // wipes the other accounts' films). Only the primary account owns the
+            // Jellyseerr-watchlist destination so two accounts on one Jellyfin user
+            // can't clobber each other.
+            var primary = Config.GetPrimaryAccountForUser(account.UserJellyfinId);
+            if (ReferenceEquals(primary, account))
+            {
+                SyncProgress.SetPhase($"Mirroring Jellyseerr watchlist for {user.Username}");
+                await MirrorJellyseerrWatchlistAsync(jellyseerr!, jellyseerrUserId.Value, tmdbIds, user.Username!, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                _logger.LogInformation(
+                    "Skipping Jellyseerr watchlist mirror for {LbUser}: not the primary account for {Username}",
+                    account.LetterboxdUsername, user.Username);
+            }
         }
 
         if (account.AutoRequestWatchlist)

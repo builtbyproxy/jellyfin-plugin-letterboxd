@@ -286,10 +286,12 @@ public class LetterboxdController : ControllerBase
         account.MirrorJellyseerrWatchlist = request.MirrorJellyseerrWatchlist;
         account.SkipPreviouslySynced = request.SkipPreviouslySynced;
         account.StopOnFailure = request.StopOnFailure;
-        account.IsPrimary = request.IsPrimary;
-        account.PlaylistName = request.PlaylistName;
 
-        // Keep the single-primary-per-user invariant after the user toggles flags.
+        // IsPrimary and PlaylistName are deliberately NOT copied from the request.
+        // The userPage form does not expose them; deserialisation would set them to
+        // their type defaults (false / null) and clobber values that only the admin
+        // config page sets. Treat them as admin-managed and let NormalisePrimaryFlags
+        // promote a new account to primary when it's the user's only enabled one.
         Config.NormalisePrimaryFlags();
 
         Plugin.Instance!.SaveConfiguration();

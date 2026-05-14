@@ -22,6 +22,22 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 
     public static Plugin? Instance { get; private set; }
 
+    /// <summary>
+    /// Normalise the at-most-one-primary-per-Jellyfin-user invariant on every config
+    /// save. The per-user PutAccount endpoint already does this, but the admin config
+    /// page saves the entire PluginConfiguration via the stock plugin API which bypasses
+    /// the controller; without this hook an admin can leave two accounts marked primary
+    /// for the same Jellyfin user and rating-conflict resolution becomes ambiguous.
+    /// </summary>
+    public override void UpdateConfiguration(BasePluginConfiguration configuration)
+    {
+        if (configuration is PluginConfiguration cfg)
+        {
+            cfg.NormalisePrimaryFlags();
+        }
+        base.UpdateConfiguration(configuration);
+    }
+
     public IEnumerable<PluginPageInfo> GetPages()
     {
         return new[]
