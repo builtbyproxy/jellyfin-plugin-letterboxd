@@ -65,16 +65,20 @@ themselves if the API auth fails for the test account.
 
 ## CI
 
-A manual-only GitHub Actions workflow lives at
-`.github/workflows/integration.yml`. It runs on `workflow_dispatch` (Actions
-tab → "Integration tests (live Letterboxd)" → Run workflow), pulling
-`LETTERBOXD_TEST_USERNAME`/`PASSWORD` from repository secrets. The default
-`ci.yml` workflow filters integration tests out so push/PR runs stay green
-without secrets.
+A GitHub Actions workflow at `.github/workflows/integration.yml` runs the
+suite on every push to `main`, every PR, and on demand
+(`workflow_dispatch`). Credentials come from repository secrets. The default
+`ci.yml` workflow filters integration tests out so the unit run stays the
+fast-feedback path.
 
 To wire up:
 
 1. Repo Settings → Secrets and variables → Actions → New repository secret
 2. Add `LETTERBOXD_TEST_USERNAME` and `LETTERBOXD_TEST_PASSWORD` (and
    optionally `LETTERBOXD_TEST_RAW_COOKIES` / `LETTERBOXD_TEST_USER_AGENT`)
-3. Trigger via the Actions tab when you want a live run
+3. Push or open a PR — the workflow runs automatically
+
+If the secrets aren't configured (e.g. on a fork PR, where GitHub doesn't
+forward repo secrets), the workflow detects the missing credentials and
+skips with a notice instead of failing. External contributors aren't
+blocked.
