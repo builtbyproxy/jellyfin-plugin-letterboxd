@@ -2,7 +2,6 @@ using System;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -27,19 +26,6 @@ public class LetterboxdLiveTests
     {
         _output = output;
         _logger = new XunitLogger(output);
-    }
-
-    private sealed class XunitLogger : ILogger
-    {
-        private readonly ITestOutputHelper _output;
-        public XunitLogger(ITestOutputHelper output) { _output = output; }
-        public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
-        public bool IsEnabled(LogLevel logLevel) => true;
-        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
-        {
-            try { _output.WriteLine($"[{logLevel}] {formatter(state, exception)}"); } catch { }
-        }
-        private sealed class NullScope : IDisposable { public static readonly NullScope Instance = new(); public void Dispose() { } }
     }
 
     private const string EnvUser = "LETTERBOXD_TEST_USERNAME";
@@ -146,9 +132,11 @@ public class LetterboxdLiveTests
             Assert.True(string.IsNullOrWhiteSpace(film?.Slug),
                 "Lookup of unknown TMDb id should not return a real film slug");
         }
-        catch (Exception)
+        catch (Exception ex) when (IsExpectedNotFoundException(ex))
         {
-            // Throw is also acceptable — production callers wrap and log.
+            // Throw with a "not found"-shaped message is acceptable; production callers
+            // wrap and log. Network, auth, or Cloudflare failures fall through and fail
+            // the test loudly so transient infra problems don't masquerade as passes.
         }
     }
 
@@ -173,10 +161,24 @@ public class LetterboxdLiveTests
             if (film != null && !string.IsNullOrWhiteSpace(film.Slug))
                 Assert.DoesNotContain("hijack-2023", film.Slug, StringComparison.OrdinalIgnoreCase);
         }
-        catch (Exception)
+        catch (Exception ex) when (IsExpectedNotFoundException(ex))
         {
-            // No-match throw is fine.
+            // No-match throw is fine. Other exception shapes (network, auth, Cloudflare)
+            // fall through so the test fails red instead of silently passing on infra blips.
         }
+    }
+
+    /// <summary>
+    /// Filter for exceptions raised by `LookupFilmByTmdbIdAsync` when the TMDb id
+    /// doesn't map to a Letterboxd film. The API client throws a bare `Exception`
+    /// today; we match on the message shape so transient network/auth/Cloudflare
+    /// errors are NOT caught by negative-path tests and instead surface as failures.
+    /// </summary>
+    private static bool IsExpectedNotFoundException(Exception ex)
+    {
+        var msg = ex.Message ?? string.Empty;
+        return msg.Contains("not found", StringComparison.OrdinalIgnoreCase)
+            || msg.Contains("no result", StringComparison.OrdinalIgnoreCase);
     }
 
     [SkippableFact]

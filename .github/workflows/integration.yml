@@ -14,9 +14,24 @@ name: Integration tests (live Letterboxd)
 # workflow. The job below detects missing credentials up front and skips
 # (success exit) so external contributors aren't blocked.
 on:
+  # Paths filter: skip the suite on PRs that only touch docs, site, manifest,
+  # deploy scripts, etc. — anything that can't change plugin behaviour. Manual
+  # workflow_dispatch has no filter so a release-gate run always exercises it.
   push:
     branches: [main]
+    paths:
+      - 'LetterboxdSync/**'
+      - 'LetterboxdSync.Tests/**'
+      - 'Directory.Build.props'
+      - 'LetterboxdSync.sln'
+      - '.github/workflows/integration.yml'
   pull_request:
+    paths:
+      - 'LetterboxdSync/**'
+      - 'LetterboxdSync.Tests/**'
+      - 'Directory.Build.props'
+      - 'LetterboxdSync.sln'
+      - '.github/workflows/integration.yml'
   workflow_dispatch:
 
 jobs:
