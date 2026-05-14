@@ -1,16 +1,22 @@
 name: Integration tests (live Letterboxd)
 
-# Manual-only. These tests hit real letterboxd.com using a dedicated test
-# account, write to its diary, and clean up after themselves. Cost is low but
-# non-zero (Cloudflare quota, account-side log entries that briefly exist).
-# Wire credentials at:
-#   Settings → Secrets and variables → Actions → New repository secret
-# Secrets used:
-#   LETTERBOXD_TEST_USERNAME  — required
-#   LETTERBOXD_TEST_PASSWORD  — required
-#   LETTERBOXD_TEST_RAW_COOKIES  — optional, only if Cloudflare 403s without them
+# Runs on every push to main, every PR, and on demand. Hits real letterboxd.com
+# using a dedicated test account, writes to its diary, and cleans up after itself.
+# Cost is low but non-zero (Cloudflare quota, brief diary residue mid-run).
+#
+# Secrets used (configure under Settings → Secrets and variables → Actions):
+#   LETTERBOXD_TEST_USERNAME    — required to actually run the tests
+#   LETTERBOXD_TEST_PASSWORD    — required to actually run the tests
+#   LETTERBOXD_TEST_RAW_COOKIES — optional, only if Cloudflare 403s without them
 #   LETTERBOXD_TEST_USER_AGENT  — optional, must match the browser the cookies came from
+#
+# Fork PRs do not have access to repo secrets and would otherwise fail the
+# workflow. The job below detects missing credentials up front and skips
+# (success exit) so external contributors aren't blocked.
 on:
+  push:
+    branches: [main]
+  pull_request:
   workflow_dispatch:
 
 jobs:
@@ -31,16 +37,24 @@ jobs:
       - name: Build
         run: dotnet build -c Release --no-restore
 
+      - name: Check for credentials
+        id: creds
+        env:
+          LETTERBOXD_TEST_USERNAME: ${{ secrets.LETTERBOXD_TEST_USERNAME }}
+          LETTERBOXD_TEST_PASSWORD: ${{ secrets.LETTERBOXD_TEST_PASSWORD }}
+        run: |
+          if [ -n "$LETTERBOXD_TEST_USERNAME" ] && [ -n "$LETTERBOXD_TEST_PASSWORD" ]; then
+            echo "have_creds=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "have_creds=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Letterboxd test credentials not configured for this run (likely a fork PR or missing repo secrets). Integration tests skipped."
+          fi
+
       - name: Run integration tests
+        if: steps.creds.outputs.have_creds == 'true'
         env:
           LETTERBOXD_TEST_USERNAME: ${{ secrets.LETTERBOXD_TEST_USERNAME }}
           LETTERBOXD_TEST_PASSWORD: ${{ secrets.LETTERBOXD_TEST_PASSWORD }}
           LETTERBOXD_TEST_RAW_COOKIES: ${{ secrets.LETTERBOXD_TEST_RAW_COOKIES }}
           LETTERBOXD_TEST_USER_AGENT: ${{ secrets.LETTERBOXD_TEST_USER_AGENT }}
-        run: |
-          if [ -z "$LETTERBOXD_TEST_USERNAME" ] || [ -z "$LETTERBOXD_TEST_PASSWORD" ]; then
-            echo "::error::LETTERBOXD_TEST_USERNAME and LETTERBOXD_TEST_PASSWORD secrets are required."
-            echo "Set them under Settings → Secrets and variables → Actions on this repo."
-            exit 1
-          fi
-          dotnet test -c Release --no-build --verbosity normal --filter "Category=Integration"
+        run: dotnet test -c Release --no-build --verbosity normal --filter "Category=Integration"
