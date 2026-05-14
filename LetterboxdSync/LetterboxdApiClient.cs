@@ -388,11 +388,20 @@ public class LetterboxdApiClient : ILetterboxdService
         using var doc = JsonDocument.Parse(json);
         if (!doc.RootElement.TryGetProperty("items", out var items)) return;
 
+        // Throttle deletes so an account with accumulated residue (e.g. from a prior
+        // run that died mid-cleanup) doesn't fire dozens of DELETEs back-to-back and
+        // trip Letterboxd's rate limit, which would leave entries undeleted and pollute
+        // future runs.
+        var first = true;
         foreach (var item in items.EnumerateArray())
         {
             if (!item.TryGetProperty("id", out var idEl)) continue;
             var entryId = idEl.GetString();
             if (string.IsNullOrEmpty(entryId)) continue;
+
+            if (!first)
+                await Task.Delay(TimeSpan.FromMilliseconds(250)).ConfigureAwait(false);
+            first = false;
 
             try
             {
@@ -406,7 +415,7 @@ public class LetterboxdApiClient : ILetterboxdService
             }
             catch (Exception ex)
             {
-                _logger.LogWarning("Cleanup: DELETE /log-entries/{Id} threw: {Message}", entryId, ex.Message);
+                _logger.LogWarning("Cleanup: DELETE /log-entry/{Id} threw: {Message}", entryId, ex.Message);
             }
         }
     }
