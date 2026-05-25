@@ -54,13 +54,24 @@ Deploy a debug build to the local Jellyfin server: `./deploy.sh` (scp's `Letterb
 
 ## Releasing
 
-Versions live in **three** places and must be bumped together before tagging:
+`manifest.json` is **CI-managed**. `release.yml` is the only writer. Do not pre-add `PLACEHOLDER` entries by hand; `ci.yml` will refuse the PR. Past incident: a v1.12.0.0 manifest entry was merged to main without the tag ever being pushed, leaving the manifest advertising a release whose ZIP did not exist (404 on install for every user). The workflow now inserts the manifest entry only after the build succeeds, so that state is unreachable.
 
-1. `Directory.Build.props` — `<Version>` / `<AssemblyVersion>` / `<FileVersion>`
-2. `LetterboxdSync/LetterboxdSync.csproj` — `<AssemblyVersion>` / `<FileVersion>`
-3. `manifest.json` — add a new version entry; set `checksum` to `PLACEHOLDER`
+Steps:
 
-Then `git tag vX.Y.Z && git push --tags`. `release.yml` builds, tests, packages the ZIP, creates the GitHub release, and commits the real md5 checksum to `manifest.json` on `main` (directly, no PR — see `TODOS.md`).
+1. Bump versions on `main`:
+   - `Directory.Build.props`, set `<Version>` / `<AssemblyVersion>` / `<FileVersion>`
+   - `LetterboxdSync/LetterboxdSync.csproj`, set `<AssemblyVersion>` / `<FileVersion>`
+2. Write the user-facing changelog into `release-notes.md` (or pass `-m` inline). The release workflow uses this verbatim for both the GitHub release body and the `changelog` field in `manifest.json`.
+3. Create an **annotated** tag and push it:
+
+   ```bash
+   git tag -a vX.Y.Z -F release-notes.md
+   git push origin vX.Y.Z
+   ```
+
+   Lightweight tags (no annotation) are rejected by the workflow.
+
+`release.yml` then verifies the tag matches the project's `AssemblyVersion`, builds + tests, packages the ZIP, creates the GitHub release, and inserts a new entry into `manifest.json` on `main` with the real md5 checksum, the release `sourceUrl`, and the tag annotation as the changelog. Re-running the workflow on the same tag is idempotent (updates the entry in place).
 
 ## OpenSpec
 

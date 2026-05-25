@@ -13,6 +13,26 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Validate manifest.json
+        # manifest.json is CI-managed (see release.yml). This guards the two
+        # ways it can be poisoned by hand: a PLACEHOLDER checksum left in,
+        # or a sourceUrl that no longer resolves (release deleted/renamed).
+        run: |
+          set -e
+          if grep -q PLACEHOLDER manifest.json; then
+            echo "::error::manifest.json contains PLACEHOLDER. Manifest entries are inserted by release.yml after a successful build — do not pre-commit them. See CLAUDE.md > Releasing."
+            exit 1
+          fi
+          fail=0
+          while IFS= read -r url; do
+            code=$(curl -sIL -o /dev/null -w '%{http_code}' "$url")
+            if [ "$code" != "200" ]; then
+              echo "::error::manifest sourceUrl returned HTTP $code: $url"
+              fail=1
+            fi
+          done < <(jq -r '.[0].versions[].sourceUrl' manifest.json)
+          exit $fail
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
         with:

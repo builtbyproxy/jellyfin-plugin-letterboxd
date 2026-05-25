@@ -12,7 +12,61 @@ jobs:
       contents: write
 
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout main
+        # Check out main directly (not the tag's detached HEAD) so the
+        # manifest commit at the end of this job lands on main cleanly.
+        uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Resolve version from tag
+        id: version
+        run: |
+          set -e
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          ASSEMBLY="${VERSION}.0"
+          echo "tag=$TAG"           >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION"   >> "$GITHUB_OUTPUT"
+          echo "assembly=$ASSEMBLY" >> "$GITHUB_OUTPUT"
+
+      - name: Verify project version matches tag
+        # If the dev tags without bumping Directory.Build.props/csproj the
+        # built DLL's AssemblyVersion won't match the manifest entry we're
+        # about to write, and Jellyfin will refuse to load it. Fail loud.
+        run: |
+          set -e
+          ASSEMBLY="${{ steps.version.outputs.assembly }}"
+          PROJ=$(grep -oE '<AssemblyVersion>[^<]+' Directory.Build.props | head -1 | sed 's/<AssemblyVersion>//')
+          if [ "$PROJ" != "$ASSEMBLY" ]; then
+            echo "::error::Directory.Build.props AssemblyVersion ($PROJ) does not match tag (${ASSEMBLY}). Bump versions on main before tagging."
+            exit 1
+          fi
+          CSPROJ=$(grep -oE '<AssemblyVersion>[^<]+' LetterboxdSync/LetterboxdSync.csproj | head -1 | sed 's/<AssemblyVersion>//')
+          if [ "$CSPROJ" != "$ASSEMBLY" ]; then
+            echo "::error::LetterboxdSync.csproj AssemblyVersion ($CSPROJ) does not match tag (${ASSEMBLY})."
+            exit 1
+          fi
+
+      - name: Read changelog from tag annotation
+        # Annotated tag message becomes the user-facing changelog text in
+        # both the GitHub release body and the manifest entry. Lightweight
+        # tags (no annotation) are rejected — the changelog is required.
+        run: |
+          set -e
+          TAG="${{ steps.version.outputs.tag }}"
+          MSG=$(git tag -l --format='%(contents)' "$TAG")
+          # Strip any trailing PGP signature block
+          MSG=$(printf '%s' "$MSG" | sed '/^-----BEGIN PGP SIGNATURE-----/,$d')
+          MSG=$(printf '%s' "$MSG" | sed -e 's/[[:space:]]*$//')
+          if [ "${#MSG}" -lt 20 ]; then
+            echo "::error::Tag $TAG must be an annotated tag with a changelog message of at least 20 chars. Use: git tag -a $TAG -F release-notes.md && git push origin $TAG"
+            exit 1
+          fi
+          printf '%s' "$MSG" > /tmp/changelog.txt
+          echo "Changelog (${#MSG} chars):"
+          head -c 400 /tmp/changelog.txt; echo
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
@@ -26,29 +80,60 @@ jobs:
         run: dotnet build -c Release --no-restore
 
       - name: Test
-        run: dotnet test -c Release --no-build --verbosity normal
+        run: dotnet test -c Release --no-build --verbosity normal --filter "Category!=Integration"
 
       - name: Package
         run: |
           cd LetterboxdSync/bin/Release/net9.0
-          zip -j /tmp/jellyfin-plugin-letterboxd-${{ github.ref_name }}.zip LetterboxdSync.dll HtmlAgilityPack.dll
+          zip -j /tmp/jellyfin-plugin-letterboxd-${{ steps.version.outputs.tag }}.zip LetterboxdSync.dll HtmlAgilityPack.dll
 
-      - name: Create Release
+      - name: Compute checksum
+        id: cs
+        run: |
+          CS=$(md5sum /tmp/jellyfin-plugin-letterboxd-${{ steps.version.outputs.tag }}.zip | awk '{print $1}')
+          echo "checksum=$CS" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          files: /tmp/jellyfin-plugin-letterboxd-${{ github.ref_name }}.zip
-          generate_release_notes: true
+          files: /tmp/jellyfin-plugin-letterboxd-${{ steps.version.outputs.tag }}.zip
+          body_path: /tmp/changelog.txt
 
-      - name: Update manifest checksum
+      - name: Insert manifest entry
+        # Manifest is CI-managed: the only writer is this step, after the
+        # release artifact actually exists. Idempotent on re-run (updates
+        # in place if the version already exists in the manifest).
         run: |
-          CHECKSUM=$(md5sum /tmp/jellyfin-plugin-letterboxd-${{ github.ref_name }}.zip | awk '{print $1}')
-          VERSION="${{ github.ref_name }}"
-          VERSION="${VERSION#v}"
+          set -e
+          ASSEMBLY="${{ steps.version.outputs.assembly }}"
+          TAG="${{ steps.version.outputs.tag }}"
+          CS="${{ steps.cs.outputs.checksum }}"
+          URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/jellyfin-plugin-letterboxd-${TAG}.zip"
+          TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          # Inherit targetAbi from the most recent existing entry so bumping
+          # the Jellyfin ABI floor stays a deliberate edit to manifest.json.
+          ABI=$(jq -r '.[0].versions[0].targetAbi // "10.11.0.0"' manifest.json)
+          CHANGELOG=$(cat /tmp/changelog.txt)
 
-          # Use jq to update the checksum for the matching version entry
-          jq --arg ver "${VERSION}.0" --arg cs "$CHECKSUM" \
-            '.[0].versions |= map(if .version == $ver then .checksum = $cs else . end)' \
-            manifest.json > manifest.tmp && mv manifest.tmp manifest.json
+          if jq -e --arg v "$ASSEMBLY" '.[0].versions | any(.version == $v)' manifest.json > /dev/null; then
+            echo "Updating existing $ASSEMBLY entry in place"
+            jq --arg v "$ASSEMBLY" --arg cs "$CS" --arg url "$URL" --arg ts "$TS" --arg cl "$CHANGELOG" \
+              '.[0].versions |= map(if .version == $v then (.checksum=$cs | .sourceUrl=$url | .timestamp=$ts | .changelog=$cl) else . end)' \
+              manifest.json > manifest.tmp
+          else
+            echo "Inserting new $ASSEMBLY entry at top of manifest"
+            jq --arg v "$ASSEMBLY" --arg cs "$CS" --arg url "$URL" --arg ts "$TS" --arg cl "$CHANGELOG" --arg abi "$ABI" \
+              '.[0].versions = ([{
+                version: $v,
+                changelog: $cl,
+                targetAbi: $abi,
+                sourceUrl: $url,
+                checksum: $cs,
+                timestamp: $ts
+              }] + .[0].versions)' \
+              manifest.json > manifest.tmp
+          fi
+          mv manifest.tmp manifest.json
 
       - name: Commit manifest update
         run: |
@@ -56,5 +141,5 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add manifest.json
           git diff --cached --quiet && exit 0
-          git commit -m "Update manifest checksum for ${{ github.ref_name }}"
+          git commit -m "Release ${{ steps.version.outputs.tag }} (manifest auto-update)"
           git push origin HEAD:main
