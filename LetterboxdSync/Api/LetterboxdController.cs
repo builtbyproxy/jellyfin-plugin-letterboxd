@@ -55,15 +55,35 @@ public class LetterboxdController : ControllerBase
     private string? GetCurrentUserId()
         => User.Claims.FirstOrDefault(c => c.Type == "Jellyfin-UserId")?.Value?.Replace("-", "");
 
-    private string? GetJellyfinUsername()
+    // internal (not private) so unit tests in LetterboxdSync.Tests can exercise the
+    // defensive paths directly. See InternalsVisibleTo in the csproj.
+    internal string? GetJellyfinUsername()
     {
-        var userId = GetCurrentUserId();
-        if (string.IsNullOrEmpty(userId)) return null;
+        // Defensive: every reported 500 on /Stats and /History (issue #46) collapsed
+        // into this method's frame. Without the exception type/message we cannot
+        // pin the root cause, but the read endpoints don't need a username to work
+        // (SyncHistory.GetStats/GetPage treat a null username as "no filter"), so
+        // failing closed to null is strictly better than 500ing the dashboard.
+        try
+        {
+            if (User is null || _userManager is null) return null;
 
-        // Resolve Jellyfin user ID to username for SyncHistory filtering
-        // SyncHistory stores the Jellyfin username (e.g. "lachlan"), not the Letterboxd username
-        var user = _userManager.Users.FirstOrDefault(u => u.Id.ToString("N") == userId);
-        return user?.Username;
+            var userId = GetCurrentUserId();
+            if (string.IsNullOrEmpty(userId)) return null;
+
+            // Resolve Jellyfin user ID to username for SyncHistory filtering.
+            // SyncHistory stores the Jellyfin username (e.g. "lachlan"), not the Letterboxd username.
+            var users = _userManager.Users;
+            if (users is null) return null;
+
+            var user = users.FirstOrDefault(u => u.Id.ToString("N") == userId);
+            return user?.Username;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "GetJellyfinUsername failed; returning null (history/stats will be unfiltered)");
+            return null;
+        }
     }
 
     [HttpGet("Progress")]

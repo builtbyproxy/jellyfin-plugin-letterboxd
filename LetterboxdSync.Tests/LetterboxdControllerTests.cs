@@ -106,6 +106,96 @@ public class LetterboxdControllerTests
         Assert.Equal(0, Prop<int>(result, "offset"));
     }
 
+    // ----- GetJellyfinUsername (defensive paths, issue #46) -----
+    // Every reported 500 on /Stats and /History collapsed into this method's frame.
+    // The defensive fix returns null on every failure mode so the read endpoints
+    // degrade to unfiltered results instead of 500ing the dashboard.
+
+    [Fact]
+    public void GetJellyfinUsername_NoUserClaim_ReturnsNull()
+    {
+        using var h = new ControllerTestHarness(currentUserId: null);
+
+        Assert.Null(h.Controller.GetJellyfinUsername());
+    }
+
+    [Fact]
+    public void GetJellyfinUsername_ClaimWithNoMatchingUser_ReturnsNull()
+    {
+        // Claim is present, but _userManager.Users contains no row with that id.
+        // Pre-fix this path was already safe; we keep the test to lock the contract.
+        // ControllerTestHarness.SetUsers can't be used here: it substitutes User via
+        // NSubstitute, but Jellyfin.Database User has no parameterless ctor. The
+        // default mocked Users list is empty, which is exactly what this test wants.
+        using var h = new ControllerTestHarness(currentUserId: UserId);
+
+        Assert.Null(h.Controller.GetJellyfinUsername());
+    }
+
+    [Fact]
+    public void GetJellyfinUsername_ClaimMatchesUser_ReturnsUsername()
+    {
+        // Construct a real User (NSubstitute can't proxy it). The User's Id is
+        // auto-generated, so we wire the controller's currentUserId from it
+        // rather than the other way around.
+        var realUser = new Jellyfin.Database.Implementations.Entities.User(
+            "lachlan", "test-provider-id", "test-reset-id");
+        var idHex = realUser.Id.ToString("N");
+
+        using var h = new ControllerTestHarness(currentUserId: idHex);
+        h.UserManager.Users.Returns(new[] { realUser });
+
+        Assert.Equal("lachlan", h.Controller.GetJellyfinUsername());
+    }
+
+    [Fact]
+    public void GetJellyfinUsername_UsersCollectionNull_ReturnsNullDoesNotThrow()
+    {
+        // Simulates a Jellyfin build / lifecycle state where IUserManager.Users
+        // returns null. Pre-fix this NRE'd inside FirstOrDefault and bubbled out
+        // as a 500.
+        using var h = new ControllerTestHarness(currentUserId: UserId);
+        h.UserManager.Users.Returns((System.Collections.Generic.IReadOnlyList<Jellyfin.Database.Implementations.Entities.User>?)null!);
+
+        Assert.Null(h.Controller.GetJellyfinUsername());
+    }
+
+    [Fact]
+    public void GetJellyfinUsername_UsersAccessorThrows_SwallowedAndReturnsNull()
+    {
+        // Simulates the suspected production failure: something inside the lookup
+        // throws (DI quirk, disposed manager, auth-context oddity). The endpoint
+        // must not 500.
+        using var h = new ControllerTestHarness(currentUserId: UserId);
+        h.UserManager.Users.Returns(_ => throw new InvalidOperationException("simulated"));
+
+        Assert.Null(h.Controller.GetJellyfinUsername());
+    }
+
+    [Fact]
+    public void GetStats_WhenUsernameResolutionThrows_StillReturns200()
+    {
+        // End-to-end through the public endpoint: the contract reported in issue #46
+        // is that /Stats returns 500. After the defensive fix it must return 200.
+        using var h = new ControllerTestHarness(currentUserId: UserId);
+        h.UserManager.Users.Returns(_ => throw new InvalidOperationException("simulated"));
+
+        var result = h.Controller.GetStats();
+
+        Assert.IsType<OkObjectResult>(result);
+    }
+
+    [Fact]
+    public void GetHistory_WhenUsernameResolutionThrows_StillReturns200()
+    {
+        using var h = new ControllerTestHarness(currentUserId: UserId);
+        h.UserManager.Users.Returns(_ => throw new InvalidOperationException("simulated"));
+
+        var result = h.Controller.GetHistory();
+
+        Assert.IsType<OkObjectResult>(result);
+    }
+
     // ----- GetAccount -----
 
     [Fact]
