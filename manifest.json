@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.13.1.0",
+        "changelog": "ci: enforce version bump on every PR, auto-release on merge, rebuild site on release (#50)",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/releases/download/v1.13.1/jellyfin-plugin-letterboxd-v1.13.1.zip",
+        "checksum": "34e7334045954fa558364fd11be5b73e",
+        "timestamp": "2026-05-26T00:53:08Z"
+      },
+      {
         "version": "1.13.0.0",
         "changelog": "Required update for Jellyfin 10.11.9 and newer.\n\nJellyfin 10.11.9 changed the `IUserManager` ABI (the `Users` property was removed, replaced by a `GetUsers()` method). The plugin was compiled against the 10.11.0 SDK, so on Jellyfin 10.11.9 and 10.11.10 every read of the user list throws `MissingMethodException`. Symptoms reported in #46: the in-dashboard Stats and History endpoints return 500, the \"Sync watched movies to Letterboxd\" scheduled task fails immediately, and \"Sync Letterboxd watchlist to playlist\" fails the same way.\n\nThis release recompiles the plugin against `Jellyfin.Controller` / `Jellyfin.Model` 10.11.10 and rewrites the seven `_userManager.Users` call sites against the new `GetUsers()` method. The plugin's behaviour is otherwise unchanged from v1.12.0.\n\nCompatibility: `targetAbi` is now `10.11.9.0`. Jellyfin's plugin catalog will only offer v1.13.0 to servers running Jellyfin 10.11.9 or newer. If you are on Jellyfin 10.11.0 through 10.11.8 you will continue to be served v1.12.0 by the catalog, which still works for you; upgrade Jellyfin if you want future plugin updates.\n\nFixes #46.",
         "targetAbi": "10.11.9.0",
