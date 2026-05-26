@@ -1,108 +1,128 @@
 name: Release
 
+# Fires on every push to main. If Directory.Build.props's AssemblyVersion
+# already has a matching git tag, the workflow exits cleanly (idempotent, so
+# our own auto-commit re-triggering this workflow is a harmless no-op). If
+# there's no tag, it builds, tests, packages, creates the GitHub Release,
+# inserts the manifest entry (using targetAbi.txt for the floor), and pushes
+# the auto-commit + tag together.
+#
+# Version bumps happen in regular PRs (gated by version-gate.yml). This
+# workflow doesn't decide the version; it just ships whatever the project
+# files say. That keeps the dev experience simple: bump version in your PR,
+# write a Conventional-Commits title, merge, done.
+
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [main]
+
+permissions:
+  contents: write
 
 jobs:
   release:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
     steps:
-      - name: Checkout main
-        # Check out main directly (not the tag's detached HEAD) so the
-        # manifest commit at the end of this job lands on main cleanly.
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
         with:
-          ref: main
           fetch-depth: 0
 
-      - name: Resolve version from tag
+      - name: Read project version
         id: version
         run: |
           set -e
-          TAG="${{ github.ref_name }}"
-          VERSION="${TAG#v}"
-          ASSEMBLY="${VERSION}.0"
-          echo "tag=$TAG"           >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION"   >> "$GITHUB_OUTPUT"
+          ASSEMBLY=$(grep -oE '<AssemblyVersion>[^<]+' Directory.Build.props | head -1 | sed 's/<AssemblyVersion>//')
+          if [ -z "$ASSEMBLY" ]; then
+            echo "::error::Could not read AssemblyVersion from Directory.Build.props"
+            exit 1
+          fi
+          # Tag is vX.Y.Z (strip the trailing .0 from the 4-part AssemblyVersion)
+          TAG="v$(echo "$ASSEMBLY" | sed -E 's/\.0$//')"
           echo "assembly=$ASSEMBLY" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG"           >> "$GITHUB_OUTPUT"
+          echo "AssemblyVersion: $ASSEMBLY"
+          echo "Tag: $TAG"
 
-      - name: Verify project version matches tag
-        # If the dev tags without bumping Directory.Build.props/csproj the
-        # built DLL's AssemblyVersion won't match the manifest entry we're
-        # about to write, and Jellyfin will refuse to load it. Fail loud.
-        run: |
-          set -e
-          ASSEMBLY="${{ steps.version.outputs.assembly }}"
-          PROJ=$(grep -oE '<AssemblyVersion>[^<]+' Directory.Build.props | head -1 | sed 's/<AssemblyVersion>//')
-          if [ "$PROJ" != "$ASSEMBLY" ]; then
-            echo "::error::Directory.Build.props AssemblyVersion ($PROJ) does not match tag (${ASSEMBLY}). Bump versions on main before tagging."
-            exit 1
-          fi
-          CSPROJ=$(grep -oE '<AssemblyVersion>[^<]+' LetterboxdSync/LetterboxdSync.csproj | head -1 | sed 's/<AssemblyVersion>//')
-          if [ "$CSPROJ" != "$ASSEMBLY" ]; then
-            echo "::error::LetterboxdSync.csproj AssemblyVersion ($CSPROJ) does not match tag (${ASSEMBLY})."
-            exit 1
-          fi
-
-      - name: Read changelog from tag annotation
-        # Annotated tag message becomes the user-facing changelog text in
-        # both the GitHub release body and the manifest entry. Lightweight
-        # tags (no annotation) are rejected — the changelog is required.
+      - name: Skip if tag already exists
+        id: check
         run: |
           set -e
           TAG="${{ steps.version.outputs.tag }}"
-          MSG=$(git tag -l --format='%(contents)' "$TAG")
-          # Strip any trailing PGP signature block
-          MSG=$(printf '%s' "$MSG" | sed '/^-----BEGIN PGP SIGNATURE-----/,$d')
-          MSG=$(printf '%s' "$MSG" | sed -e 's/[[:space:]]*$//')
-          if [ "${#MSG}" -lt 20 ]; then
-            echo "::error::Tag $TAG must be an annotated tag with a changelog message of at least 20 chars. Use: git tag -a $TAG -F release-notes.md && git push origin $TAG"
+          # Look at remote tags too, so a tag pushed by a previous run of this
+          # workflow (race-y rerun, manual push) short-circuits us cleanly.
+          if git rev-parse --verify "refs/tags/$TAG" >/dev/null 2>&1 \
+             || git ls-remote --exit-code --tags origin "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists; nothing to release."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify csproj matches Directory.Build.props
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          set -e
+          ASSEMBLY="${{ steps.version.outputs.assembly }}"
+          CSPROJ=$(grep -oE '<AssemblyVersion>[^<]+' LetterboxdSync/LetterboxdSync.csproj | head -1 | sed 's/<AssemblyVersion>//')
+          if [ "$CSPROJ" != "$ASSEMBLY" ]; then
+            echo "::error::LetterboxdSync.csproj AssemblyVersion ($CSPROJ) does not match Directory.Build.props ($ASSEMBLY). version-gate.yml should have caught this on the PR."
             exit 1
           fi
-          printf '%s' "$MSG" > /tmp/changelog.txt
-          echo "Changelog (${#MSG} chars):"
-          head -c 400 /tmp/changelog.txt; echo
+
+      - name: Capture release body
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          # HEAD is the squash-merge commit on main; subject is the PR title
+          # (Conventional Commits), body is whatever was included on merge.
+          git log -1 --format='%B' HEAD > /tmp/release-body.txt
+          echo "--- release body preview ---"
+          head -c 500 /tmp/release-body.txt
+          echo
 
       - name: Setup .NET
+        if: steps.check.outputs.skip == 'false'
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '9.0.x'
 
       - name: Restore
+        if: steps.check.outputs.skip == 'false'
         run: dotnet restore
 
       - name: Build
+        if: steps.check.outputs.skip == 'false'
         run: dotnet build -c Release --no-restore
 
       - name: Test
+        if: steps.check.outputs.skip == 'false'
         run: dotnet test -c Release --no-build --verbosity normal --filter "Category!=Integration"
 
       - name: Package
+        if: steps.check.outputs.skip == 'false'
         run: |
           cd LetterboxdSync/bin/Release/net9.0
           zip -j /tmp/jellyfin-plugin-letterboxd-${{ steps.version.outputs.tag }}.zip LetterboxdSync.dll HtmlAgilityPack.dll
 
       - name: Compute checksum
+        if: steps.check.outputs.skip == 'false'
         id: cs
         run: |
           CS=$(md5sum /tmp/jellyfin-plugin-letterboxd-${{ steps.version.outputs.tag }}.zip | awk '{print $1}')
           echo "checksum=$CS" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
+        if: steps.check.outputs.skip == 'false'
         uses: softprops/action-gh-release@v3
         with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
           files: /tmp/jellyfin-plugin-letterboxd-${{ steps.version.outputs.tag }}.zip
-          body_path: /tmp/changelog.txt
+          body_path: /tmp/release-body.txt
 
       - name: Insert manifest entry
-        # Manifest is CI-managed: the only writer is this step, after the
-        # release artifact actually exists. Idempotent on re-run (updates
-        # in place if the version already exists in the manifest).
+        # Manifest is CI-managed: only release.yml writes to it. Idempotent on
+        # re-run (updates existing entry in place if present).
+        if: steps.check.outputs.skip == 'false'
         run: |
           set -e
           ASSEMBLY="${{ steps.version.outputs.assembly }}"
@@ -110,20 +130,13 @@ jobs:
           CS="${{ steps.cs.outputs.checksum }}"
           URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/jellyfin-plugin-letterboxd-${TAG}.zip"
           TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          # targetAbi is the minimum Jellyfin version the plugin supports.
-          # Source of truth is targetAbi.txt in the repo root, bumped whenever
-          # the dev's Jellyfin.Controller / Jellyfin.Model PackageReference is
-          # raised to a version that introduced ABI changes the plugin now
-          # depends on (e.g. 10.11.9 turned IUserManager.Users into GetUsers).
-          # Fallback to the previous entry's value keeps re-runs idempotent
-          # for releases predating the file.
           if [ -f targetAbi.txt ]; then
             ABI=$(tr -d '[:space:]' < targetAbi.txt)
           else
             ABI=$(jq -r '.[0].versions[0].targetAbi // "10.11.0.0"' manifest.json)
           fi
           echo "targetAbi for this release: $ABI"
-          CHANGELOG=$(cat /tmp/changelog.txt)
+          CHANGELOG=$(cat /tmp/release-body.txt)
 
           if jq -e --arg v "$ASSEMBLY" '.[0].versions | any(.version == $v)' manifest.json > /dev/null; then
             echo "Updating existing $ASSEMBLY entry in place"
@@ -146,6 +159,7 @@ jobs:
           mv manifest.tmp manifest.json
 
       - name: Commit manifest update
+        if: steps.check.outputs.skip == 'false'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

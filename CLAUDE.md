@@ -54,25 +54,29 @@ Deploy a debug build to the local Jellyfin server: `./deploy.sh` (scp's `Letterb
 
 ## Releasing
 
-`manifest.json` is **CI-managed**. `release.yml` is the only writer. Do not pre-add `PLACEHOLDER` entries by hand; `ci.yml` will refuse the PR. Past incident: a v1.12.0.0 manifest entry was merged to main without the tag ever being pushed, leaving the manifest advertising a release whose ZIP did not exist (404 on install for every user). The workflow now inserts the manifest entry only after the build succeeds, so that state is unreachable.
+**Every merge to `main` ships a release.** No manual tag pushes, no release-notes files. The pipeline is:
 
-Steps:
+1. Open a PR. The PR must:
+   - Have a **Conventional Commits** title (`feat:`, `fix:`, `chore:`, `docs:`, `ci:`, `refactor:`, `test:`, `perf:`, `build:`, `style:`). Enforced by `pr-title.yml`.
+   - **Bump `AssemblyVersion` / `FileVersion`** in both `Directory.Build.props` and `LetterboxdSync/LetterboxdSync.csproj`. Patch bumps (e.g. `1.13.0.0` → `1.13.1.0`) are fine for docs / CI / refactor changes; every PR ships. Enforced by `version-gate.yml`.
+   - If the `Jellyfin.Controller` / `Jellyfin.Model` PackageReference is bumped and the new SDK introduces an ABI break the plugin now depends on, also bump `targetAbi.txt` to the minimum Jellyfin version that has the new ABI. This is the floor Jellyfin's plugin catalog uses to gate the release.
 
-1. Bump versions on `main`:
-   - `Directory.Build.props`, set `<Version>` / `<AssemblyVersion>` / `<FileVersion>`
-   - `LetterboxdSync/LetterboxdSync.csproj`, set `<AssemblyVersion>` / `<FileVersion>`
-   - If the `Jellyfin.Controller` / `Jellyfin.Model` PackageReference is bumped and the new SDK introduces an ABI break the plugin now depends on, also bump `targetAbi.txt` to the minimum Jellyfin version that has the new ABI. This is the floor Jellyfin's plugin catalog uses to gate the release: users below it stay on the previous plugin version. Past incident (v1.13.0): Jellyfin 10.11.9 removed `IUserManager.Users` (replaced by `GetUsers()`), so v1.13.0 bumped the SDK to 10.11.10 and `targetAbi.txt` to `10.11.9.0`.
-2. Write the user-facing changelog into `release-notes.md` (or pass `-m` inline). The release workflow uses this verbatim for both the GitHub release body and the `changelog` field in `manifest.json`.
-3. Create an **annotated** tag and push it:
+2. Merge with **Squash and merge**. The PR title becomes the squash commit subject, which becomes the GitHub Release body and the `changelog` field in `manifest.json`.
 
-   ```bash
-   git tag -a vX.Y.Z -F release-notes.md
-   git push origin vX.Y.Z
-   ```
+3. `release.yml` fires automatically on the push to `main`. It reads `AssemblyVersion` from `Directory.Build.props`, checks no tag for that version exists yet (idempotent), builds + tests, packages, creates the GitHub Release, inserts the manifest entry using `targetAbi.txt`, and pushes the auto-commit + tag together.
 
-   Lightweight tags (no annotation) are rejected by the workflow.
+4. `deploy-docs.yml` fires via `workflow_run` on Release completion, rebuilding letterboxdsync.dev with the fresh manifest. (The `GITHUB_TOKEN`-authenticated auto-commit can't fire push-based workflows, hence the explicit `workflow_run` trigger.)
 
-`release.yml` then verifies the tag matches the project's `AssemblyVersion`, builds + tests, packages the ZIP, creates the GitHub release, and inserts a new entry into `manifest.json` on `main` with the real md5 checksum, the release `sourceUrl`, and the tag annotation as the changelog. Re-running the workflow on the same tag is idempotent (updates the entry in place).
+### Breaking changes
+
+The version-bump magnitude is the canonical signal, not a `!` in the PR title. Going `1.x.y` → `2.0.0` means breaking; we do not use `feat!:` / `fix!:`.
+
+### Past incidents this pipeline prevents
+
+- **v1.12.0.0** manifest entry was merged to main with `"checksum": "PLACEHOLDER"` and no tag ever got pushed, leaving the manifest advertising a 404'ing release for every user. `release.yml` is now the *only* writer of `manifest.json`, and `ci.yml`'s manifest validator refuses any PR that touches it with a `PLACEHOLDER` or 404 `sourceUrl`.
+- **v1.13.0** was cut manually after the merge, which works but doesn't enforce that *every* merge ships. The version-gate now guarantees a release on every merge.
+- **v1.12.0 and v1.13.0 site staleness**: the manifest auto-commit didn't trigger Deploy site (GitHub token limitation). The `workflow_run` trigger now fires Deploy site after every Release.
+- **v1.13.0 SDK ABI break**: Jellyfin 10.11.9 removed `IUserManager.Users` (replaced by `GetUsers()`), so v1.13.0 bumped the SDK to 10.11.10 and `targetAbi.txt` to `10.11.9.0`. See `feedback_jellyfin_plugin_abi_break` in the user's memory.
 
 ## OpenSpec
 

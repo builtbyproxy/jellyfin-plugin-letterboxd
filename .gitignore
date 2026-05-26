@@ -7,6 +7,17 @@ obj/
 release/
 .gstack/
 
+# Editor / agent scratch directories that get auto-generated alongside the
+# project; never useful in version control.
+.baselines/
+.claude/
+.cursor/
+TestResults/
+
+# Old manual-release artifact; the new release.yml uses the squash-merge
+# commit message instead of a release-notes file.
+release-notes.md
+
 # Local-only secrets for integration tests. The integration test suite reads
 # Letterboxd credentials from environment variables; never commit them.
 .env

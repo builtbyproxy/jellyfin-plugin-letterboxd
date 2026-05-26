@@ -1,0 +1,52 @@
+name: Version Gate
+
+# Every PR to main must bump Directory.Build.props's AssemblyVersion. Without
+# this gate, a PR could land on main without a corresponding release (the
+# Release workflow short-circuits when a tag for the current version already
+# exists), leaving the change un-shipped and users unaware. Patch-level bumps
+# are fine for docs / CI / refactor changes; magnitude is a human judgement
+# call, the gate only enforces "something changed".
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Compare versions
+        run: |
+          set -e
+          extract() {
+            grep -oE '<AssemblyVersion>[^<]+' "$1" | head -1 | sed 's/<AssemblyVersion>//'
+          }
+          PR_V=$(extract Directory.Build.props)
+          MAIN_V=$(git show origin/main:Directory.Build.props | grep -oE '<AssemblyVersion>[^<]+' | head -1 | sed 's/<AssemblyVersion>//')
+          echo "PR  Directory.Build.props AssemblyVersion: $PR_V"
+          echo "main Directory.Build.props AssemblyVersion: $MAIN_V"
+
+          if [ -z "$PR_V" ] || [ -z "$MAIN_V" ]; then
+            echo "::error::Could not read AssemblyVersion from one of the files."
+            exit 1
+          fi
+
+          if [ "$PR_V" = "$MAIN_V" ]; then
+            echo "::error::Version was not bumped (still $PR_V). Bump AssemblyVersion/FileVersion in Directory.Build.props and LetterboxdSync/LetterboxdSync.csproj before merging. Patch bumps (e.g. 1.13.0.0 -> 1.13.1.0) are fine for docs/CI changes."
+            exit 1
+          fi
+
+          # Also verify both files agree, so the Release workflow won't fail
+          # later for a reason that's easier to catch here.
+          CSPROJ_V=$(extract LetterboxdSync/LetterboxdSync.csproj)
+          if [ "$CSPROJ_V" != "$PR_V" ]; then
+            echo "::error::LetterboxdSync.csproj AssemblyVersion ($CSPROJ_V) does not match Directory.Build.props ($PR_V). Bump both together."
+            exit 1
+          fi
+
+          echo "Version bump OK: $MAIN_V -> $PR_V"

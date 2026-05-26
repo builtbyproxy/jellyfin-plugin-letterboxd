@@ -8,6 +8,16 @@ on:
       - 'manifest.json'
       - '.github/workflows/deploy-docs.yml'
   workflow_dispatch:
+  # Auto-deploy after every successful Release. The Release workflow's
+  # manifest auto-commit is authenticated with GITHUB_TOKEN, which
+  # deliberately does NOT trigger other workflows (anti-loop safety). Without
+  # this trigger the site would stay stale on every plugin release. See the
+  # post-v1.12.0 / v1.13.0 incident: the site was missing two releases until
+  # this was added.
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+    branches: [main]
 
 permissions:
   contents: read
@@ -20,6 +30,9 @@ concurrency:
 
 jobs:
   build:
+    # When triggered by Release completion, only deploy if Release succeeded.
+    # For other triggers (push, workflow_dispatch) always run.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
