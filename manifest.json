@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.13.2.0",
+        "changelog": "Maintenance release. The manifest changelog field and the letterboxdsync.dev Releases page now match the v1.0–v1.12 single-paragraph user-facing prose style after v1.13.0 (rendered as a multi-paragraph incident report) and v1.13.1 (rendered as the raw conventional-commit subject line) drifted away from it. The release workflow now pulls the manifest changelog from a `## Release notes` section in the merged PR's body via the GitHub API, so the prose that lands in users' plugin catalogs is deliberate and reviewable. Backfills the two missing structured entries on the Releases page and rewrites the two stale manifest entries inline. No plugin behaviour changes.",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/releases/download/v1.13.2/jellyfin-plugin-letterboxd-v1.13.2.zip",
+        "checksum": "0b849abb518ebbdf526a90fbd9d1abfd",
+        "timestamp": "2026-05-26T01:52:34Z"
+      },
+      {
         "version": "1.13.1.0",
         "changelog": "Maintenance release: stronger release pipeline. Every PR now bumps the version (gated by a required CI check) and auto-ships on merge to main, PR titles must follow Conventional Commits, and letterboxdsync.dev rebuilds on every release. No plugin behaviour changes. Past incident behind this work: v1.13.0 was cut manually after merge and the site Releases page was stale through both v1.12.0 and v1.13.0 because the manifest auto-commit could not trigger Deploy site.",
         "targetAbi": "10.11.9.0",
