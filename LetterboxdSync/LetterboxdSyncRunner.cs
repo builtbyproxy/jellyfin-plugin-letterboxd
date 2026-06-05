@@ -42,6 +42,13 @@ public class LetterboxdSyncRunner
 
     public static bool IsRunning => SyncGate.IsRunning;
 
+    /// <summary>
+    /// After this many consecutive Failed sync events for the same film, stop retrying it.
+    /// Rides out transient errors (Cloudflare 403, rate limits) over a few runs, then gives
+    /// up so a permanently unsyncable film doesn't sit at the head of the queue forever.
+    /// </summary>
+    internal const int MaxConsecutiveSyncFailures = 3;
+
     private static PluginConfiguration Config => Plugin.Instance!.Configuration;
 
     public async Task RunForAllAsync(IProgress<double> progress, string source, CancellationToken cancellationToken)
@@ -179,34 +186,52 @@ public class LetterboxdSyncRunner
             return;
         }
 
-        // Suppress films that DiaryImportTask marked played from the user's Letterboxd
-        // diary, unless they've since been actually watched on Jellyfin (LastPlayedDate
-        // set). Without this, the daily sync would invent a phantom rewatch every time
-        // it ran for the same imported film, because viewingDate defaults to today
-        // when LastPlayedDate is null and the LB-side same-day duplicate check
-        // therefore never matches the original (older) diary date. See issue #32.
-        var skippedDiaryImports = 0;
+        // Skip films marked played on Jellyfin that have no LastPlayedDate. There's no real
+        // watch date to log: viewingDate would otherwise fall back to DateTime.Now (today),
+        // which drifts forward on every run and slips past every same-date duplicate check,
+        // posting a phantom rewatch to Letterboxd roughly every other day. Wait until Jellyfin
+        // records an actual play date. This also closes the import-then-export loop from
+        // issue #32 — DiaryImportTask marks films played without a LastPlayedDate.
+        var skippedNoPlayDate = 0;
         movies = movies.Where(m =>
         {
-            var tmdbStr = m.GetProviderId(MetadataProvider.Tmdb);
-            if (!int.TryParse(tmdbStr, out var tmdbId)) return true;
-
             var ud = _userDataManager.GetUserData(user, m);
             if (ud?.LastPlayedDate.HasValue == true) return true;
+            skippedNoPlayDate++;
+            return false;
+        }).ToList();
 
-            if (SyncHistory.WasImportedFromDiary(user.Username ?? string.Empty, tmdbId))
+        if (skippedNoPlayDate > 0)
+            _logger.LogInformation(
+                "Skipping {Count} films for {Username}: marked played but no LastPlayedDate (no real watch date to log)",
+                skippedNoPlayDate, user.Username);
+
+        if (movies.Count == 0)
+        {
+            SyncProgress.Complete();
+            return;
+        }
+
+        // Abandon films that have failed to sync repeatedly. BuildSyncQueue pushes
+        // previously-failed films to the head of the queue, so a film that fails every run
+        // (not on Letterboxd, bad TMDb match, region-locked) would retry forever. After
+        // MaxConsecutiveSyncFailures consecutive failures, leave it alone.
+        var abandonedFailures = 0;
+        movies = movies.Where(m =>
+        {
+            if (!int.TryParse(m.GetProviderId(MetadataProvider.Tmdb), out var tmdbId)) return true;
+            if (SyncHistory.GetConsecutiveFailureCount(user.Username ?? string.Empty, tmdbId) >= MaxConsecutiveSyncFailures)
             {
-                skippedDiaryImports++;
+                abandonedFailures++;
                 return false;
             }
             return true;
         }).ToList();
 
-        if (skippedDiaryImports > 0)
+        if (abandonedFailures > 0)
             _logger.LogInformation(
-                "Skipping {Count} films for {Username}: previously imported from Letterboxd diary " +
-                "and not played on Jellyfin since",
-                skippedDiaryImports, user.Username);
+                "Skipping {Count} films for {Username}: {Threshold}+ consecutive sync failures, no longer retrying",
+                abandonedFailures, user.Username, MaxConsecutiveSyncFailures);
 
         if (movies.Count == 0)
         {
