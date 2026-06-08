@@ -16,8 +16,8 @@
 
   <ItemGroup>
     <PackageReference Include="HtmlAgilityPack" Version="1.6.11" />
-    <PackageReference Include="Jellyfin.Controller" Version="10.11.10" />
-    <PackageReference Include="Jellyfin.Model" Version="10.11.10" />
+    <PackageReference Include="Jellyfin.Controller" Version="10.11.11" />
+    <PackageReference Include="Jellyfin.Model" Version="10.11.11" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
