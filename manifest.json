@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.13.4.0",
+        "changelog": "test: expand plugin coverage to 89.8% line / 81.4% branch",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/releases/download/v1.13.4/jellyfin-plugin-letterboxd-v1.13.4.zip",
+        "checksum": "b8bd386fb87c909f247eeea53875570c",
+        "timestamp": "2026-06-09T09:02:18Z"
+      },
+      {
         "version": "1.13.3.0",
         "changelog": "Maintenance release. Two preventative changes aimed at the next Jellyfin SDK ABI surprise. Dependabot now watches the `Jellyfin.Controller` and `Jellyfin.Model` packages and opens a PR the day a new patch ships, so any breaking ABI change is caught by CI on our timeline rather than via a user bug report (the v1.13.0 fix only existed because Jellyfin 10.11.9's silent removal of `IUserManager.Users` surfaced as bigrichwood's report). And the version-gate CI check now refuses a patch-only version bump when `targetAbi.txt` changes in the same PR, because moving the Jellyfin compatibility floor stops a cohort of users from being offered the next plugin update and that warrants at least a minor bump so the change shows up clearly in the release notes. No plugin behaviour changes.",
         "targetAbi": "10.11.9.0",
