@@ -158,6 +158,37 @@ public class ScraperTests
     }
 
     [Fact]
+    public void ExtractFilmIdentifiers_MalformedPosteredJson_IgnoredAndFilmIdStillExtracted()
+    {
+        // The data-postered-identifier JSON is garbage; the parse must be swallowed and
+        // the film-id still read from the element, leaving productionId null.
+        var html = @"<div data-postered-identifier='{not valid json' />
+                     <div data-film-slug=""test"" data-film-id=""777""></div>";
+        var http = new LetterboxdHttpClient(TestLogger);
+        var scraper = new LetterboxdScraper(http, TestLogger);
+
+        var (filmId, productionId) = scraper.ExtractFilmIdentifiers(html, "test");
+
+        Assert.Equal("777", filmId);
+        Assert.Null(productionId);
+        http.Dispose();
+    }
+
+    [Fact]
+    public void ExtractFilmIdentifiers_EmptyFilmId_Throws()
+    {
+        // The element is found but data-film-id is blank → explicit failure rather than
+        // silently returning an empty id that would corrupt later API calls.
+        var html = "<div data-film-slug=\"test\" data-film-id=\"\"></div>";
+        var http = new LetterboxdHttpClient(TestLogger);
+        var scraper = new LetterboxdScraper(http, TestLogger);
+
+        var ex = Assert.Throws<Exception>(() => scraper.ExtractFilmIdentifiers(html, "test"));
+        Assert.Contains("empty", ex.Message);
+        http.Dispose();
+    }
+
+    [Fact]
     public async Task GetDiaryInfo_NoDiaryEntries_ReturnsEmpty()
     {
         var handler = new ScraperMockHandler((request, http) =>

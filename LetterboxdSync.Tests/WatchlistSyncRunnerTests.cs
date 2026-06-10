@@ -527,4 +527,344 @@ public class WatchlistSyncRunnerTests : IDisposable
             Plugin.Instance!.Configuration.JellyseerrApiKey = null;
         }
     }
+
+    // ----- SyncGate contention -----
+
+    [Fact]
+    public async Task TryRunForUserAsync_GateAlreadyHeld_ReturnsFalse()
+    {
+        var (user, userId) = MakeUser("lachlan");
+        _userManager.GetUsers().Returns(new[] { user });
+        AddAccount(userId);
+
+        // Simulate another scrape already in progress by taking the global gate.
+        Assert.True(await SyncGate.Instance.WaitAsync(0));
+        try
+        {
+            var ok = await _runner.TryRunForUserAsync(userId, "manual",
+                new Progress<double>(), CancellationToken.None);
+
+            Assert.False(ok);
+            // Refused before doing any work.
+            _libraryManager.DidNotReceive().GetItemList(Arg.Any<InternalItemsQuery>());
+        }
+        finally
+        {
+            SyncGate.Instance.Release();
+        }
+    }
+
+    [Fact]
+    public async Task RunForAllAsync_GateAlreadyHeld_SkipsImmediately()
+    {
+        var (user, userId) = MakeUser("lachlan");
+        _userManager.GetUsers().Returns(new[] { user });
+        AddAccount(userId);
+
+        Assert.True(await SyncGate.Instance.WaitAsync(0));
+        try
+        {
+            await _runner.RunForAllAsync(new Progress<double>(), "scheduled", CancellationToken.None);
+
+            // Gate was held, so the scheduled run is a no-op.
+            _userManager.DidNotReceive().GetUsers();
+            _libraryManager.DidNotReceive().GetItemList(Arg.Any<InternalItemsQuery>());
+        }
+        finally
+        {
+            SyncGate.Instance.Release();
+        }
+    }
+
+    // ----- RunForAllAsync: real fan-out -----
+
+    [Fact]
+    public async Task RunForAllAsync_RealUserWithMatch_CreatesPlaylist()
+    {
+        // Exercises the actual per-(user, account) sync loop in RunForAllAsync, not just
+        // the empty/skipped short-circuits the other RunForAll tests cover.
+        var (user, userId) = MakeUser("lachlan");
+        _userManager.GetUsers().Returns(new[] { user });
+        AddAccount(userId);
+
+        var service = Substitute.For<ILetterboxdService>();
+        service.GetWatchlistTmdbIdsAsync(Arg.Any<string>()).Returns(new List<int> { 1233413 });
+        LetterboxdServiceFactory.OverrideForTesting = (_, _, _, _, _) => Task.FromResult(service);
+
+        var movie = MakeMovie(1233413);
+        // First query → movies; second query → existing playlists (none) → create path.
+        _libraryManager.GetItemList(Arg.Any<InternalItemsQuery>())
+            .Returns(new List<BaseItem> { movie }, new List<BaseItem>());
+
+        await _runner.RunForAllAsync(new Progress<double>(), "scheduled", CancellationToken.None);
+
+        await _playlistManager.Received(1).CreatePlaylist(Arg.Is<PlaylistCreationRequest>(
+            req => req.UserId == user.Id && req.ItemIdList.Contains(movie.Id)));
+    }
+
+    // ----- Named-account targeting -----
+
+    [Fact]
+    public async Task TryRunForUserAsync_NamedAccountNotFound_ReturnsFalse()
+    {
+        var (user, userId) = MakeUser("lachlan");
+        _userManager.GetUsers().Returns(new[] { user });
+        AddAccount(userId); // username "lb-user"
+
+        // Caller asks for a Letterboxd account that isn't configured for this user.
+        var ok = await _runner.TryRunForUserAsync(userId, "manual",
+            new Progress<double>(), CancellationToken.None, letterboxdUsername: "someone-else");
+
+        Assert.False(ok);
+        _libraryManager.DidNotReceive().GetItemList(Arg.Any<InternalItemsQuery>());
+    }
+
+    [Fact]
+    public async Task TryRunForUserAsync_NamedAccountFound_RunsThatAccountOnly()
+    {
+        var (user, userId) = MakeUser("lachlan");
+        _userManager.GetUsers().Returns(new[] { user });
+        AddAccount(userId); // username "lb-user"
+
+        var service = Substitute.For<ILetterboxdService>();
+        service.GetWatchlistTmdbIdsAsync(Arg.Any<string>()).Returns(new List<int>());
+        LetterboxdServiceFactory.OverrideForTesting = (_, _, _, _, _) => Task.FromResult(service);
+        _libraryManager.GetItemList(Arg.Any<InternalItemsQuery>()).Returns(new List<BaseItem>());
+
+        var ok = await _runner.TryRunForUserAsync(userId, "manual",
+            new Progress<double>(), CancellationToken.None, letterboxdUsername: "lb-user");
+
+        Assert.True(ok);
+        await service.Received(1).GetWatchlistTmdbIdsAsync("lb-user");
+    }
+
+    // ----- Jellyseerr auto-request -----
+
+    [Fact]
+    public async Task TryRunForUserAsync_AutoRequest_RequestsUnmatchedFilm()
+    {
+        // Account auto-requests, the watchlist film is NOT in the library, Jellyseerr is
+        // configured → the runner should POST a movie request for the unmatched TMDb id.
+        var (user, userId) = MakeUser("lachlan");
+        _userManager.GetUsers().Returns(new[] { user });
+        AddAccount(userId, autoRequest: true);
+
+        Plugin.Instance!.Configuration.JellyseerrUrl = "http://jellyseerr.test";
+        Plugin.Instance!.Configuration.JellyseerrApiKey = "key";
+
+        var service = Substitute.For<ILetterboxdService>();
+        service.GetWatchlistTmdbIdsAsync(Arg.Any<string>()).Returns(new List<int> { 1233413 });
+        LetterboxdServiceFactory.OverrideForTesting = (_, _, _, _, _) => Task.FromResult(service);
+
+        // Library has nothing matching → film is unmatched → eligible for auto-request.
+        _libraryManager.GetItemList(Arg.Any<InternalItemsQuery>()).Returns(new List<BaseItem>());
+
+        var handler = new JellyseerrHandler(req =>
+        {
+            var path = req.RequestUri!.AbsolutePath;
+            if (req.Method == HttpMethod.Get && path.EndsWith("/api/v1/user"))
+                return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                {
+                    Content = new System.Net.Http.StringContent(
+                        "{\"results\":[{\"id\":7,\"jellyfinUserId\":\"" + user.Id.ToString("N") + "\"}]}")
+                };
+            // Movie status pre-check returns no mediaInfo → status null → POST proceeds.
+            if (req.Method == HttpMethod.Get && path.Contains("/api/v1/movie/"))
+                return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                {
+                    Content = new System.Net.Http.StringContent("{}")
+                };
+            if (req.Method == HttpMethod.Post && path.EndsWith("/api/v1/request"))
+                return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.Created);
+            return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.NotFound);
+        });
+        WatchlistSyncRunner.JellyseerrClientFactoryOverride = (url, key, log) =>
+            new JellyseerrClient(url, key, log, handler);
+        try
+        {
+            var ok = await _runner.TryRunForUserAsync(userId, "test",
+                new Progress<double>(), CancellationToken.None);
+
+            Assert.True(ok);
+            Assert.Contains(handler.Calls, r =>
+                r.Method == HttpMethod.Post && r.RequestUri!.AbsolutePath.EndsWith("/api/v1/request"));
+        }
+        finally
+        {
+            WatchlistSyncRunner.JellyseerrClientFactoryOverride = null;
+            Plugin.Instance!.Configuration.JellyseerrUrl = null;
+            Plugin.Instance!.Configuration.JellyseerrApiKey = null;
+        }
+    }
+
+    [Fact]
+    public async Task TryRunForUserAsync_AutoRequest_TalliesAlreadyExistsFailedAndErrored()
+    {
+        // Three unmatched films exercise every RequestResult branch plus the per-film
+        // exception catch: one already on Jellyseerr (skipped), one POST that 500s
+        // (Failed), and one whose POST throws (errored). The run must absorb all of it.
+        var (user, userId) = MakeUser("lachlan");
+        _userManager.GetUsers().Returns(new[] { user });
+        AddAccount(userId, autoRequest: true);
+
+        Plugin.Instance!.Configuration.JellyseerrUrl = "http://jellyseerr.test";
+        Plugin.Instance!.Configuration.JellyseerrApiKey = "key";
+
+        var service = Substitute.For<ILetterboxdService>();
+        service.GetWatchlistTmdbIdsAsync(Arg.Any<string>()).Returns(new List<int> { 100, 200, 300 });
+        LetterboxdServiceFactory.OverrideForTesting = (_, _, _, _, _) => Task.FromResult(service);
+        _libraryManager.GetItemList(Arg.Any<InternalItemsQuery>()).Returns(new List<BaseItem>());
+
+        var handler = new JellyseerrHandler(req =>
+        {
+            var path = req.RequestUri!.AbsolutePath;
+            if (req.Method == HttpMethod.Get && path.EndsWith("/api/v1/user"))
+                return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                {
+                    Content = new System.Net.Http.StringContent(
+                        "{\"results\":[{\"id\":7,\"jellyfinUserId\":\"" + user.Id.ToString("N") + "\"}]}")
+                };
+            if (req.Method == HttpMethod.Get && path.EndsWith("/api/v1/movie/100"))
+                // Status 5 (available) → pre-check returns AlreadyExists, no POST.
+                return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                {
+                    Content = new System.Net.Http.StringContent("{\"mediaInfo\":{\"status\":5}}")
+                };
+            if (req.Method == HttpMethod.Get && path.Contains("/api/v1/movie/"))
+                // 200 and 300 have no media record → status null → proceed to POST.
+                return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                {
+                    Content = new System.Net.Http.StringContent("{}")
+                };
+            if (req.Method == HttpMethod.Post && path.EndsWith("/api/v1/request"))
+            {
+                var body = req.Content!.ReadAsStringAsync().Result;
+                if (body.Contains("\"mediaId\":300"))
+                    throw new System.Net.Http.HttpRequestException("connection reset");
+                // 200 → server error → RequestResult.Failed.
+                return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.InternalServerError);
+            }
+            return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.NotFound);
+        });
+        WatchlistSyncRunner.JellyseerrClientFactoryOverride = (url, key, log) =>
+            new JellyseerrClient(url, key, log, handler);
+        try
+        {
+            var ok = await _runner.TryRunForUserAsync(userId, "test",
+                new Progress<double>(), CancellationToken.None);
+
+            // The loop swallows every per-film outcome and completes successfully.
+            Assert.True(ok);
+            // Film 100 was already available, so only 200 and 300 should reach a POST.
+            Assert.Equal(2, handler.Calls.Count(r =>
+                r.Method == HttpMethod.Post && r.RequestUri!.AbsolutePath.EndsWith("/api/v1/request")));
+        }
+        finally
+        {
+            WatchlistSyncRunner.JellyseerrClientFactoryOverride = null;
+            Plugin.Instance!.Configuration.JellyseerrUrl = null;
+            Plugin.Instance!.Configuration.JellyseerrApiKey = null;
+        }
+    }
+
+    [Fact]
+    public async Task TryRunForUserAsync_JellyseerrUserMapErrors_SkipsGracefully()
+    {
+        // The Jellyseerr user-map fetch fails (500). The runner must log and bail out of
+        // the Jellyseerr branch without throwing, posting, or deleting anything.
+        var (user, userId) = MakeUser("lachlan");
+        _userManager.GetUsers().Returns(new[] { user });
+        AddAccount(userId, autoRequest: true);
+
+        Plugin.Instance!.Configuration.JellyseerrUrl = "http://jellyseerr.test";
+        Plugin.Instance!.Configuration.JellyseerrApiKey = "key";
+
+        var service = Substitute.For<ILetterboxdService>();
+        service.GetWatchlistTmdbIdsAsync(Arg.Any<string>()).Returns(new List<int> { 1233413 });
+        LetterboxdServiceFactory.OverrideForTesting = (_, _, _, _, _) => Task.FromResult(service);
+        _libraryManager.GetItemList(Arg.Any<InternalItemsQuery>()).Returns(new List<BaseItem>());
+
+        var handler = new JellyseerrHandler(_ =>
+            new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.InternalServerError));
+        WatchlistSyncRunner.JellyseerrClientFactoryOverride = (url, key, log) =>
+            new JellyseerrClient(url, key, log, handler);
+        try
+        {
+            var ok = await _runner.TryRunForUserAsync(userId, "test",
+                new Progress<double>(), CancellationToken.None);
+
+            Assert.True(ok);
+            Assert.DoesNotContain(handler.Calls, r => r.Method == HttpMethod.Post);
+        }
+        finally
+        {
+            WatchlistSyncRunner.JellyseerrClientFactoryOverride = null;
+            Plugin.Instance!.Configuration.JellyseerrUrl = null;
+            Plugin.Instance!.Configuration.JellyseerrApiKey = null;
+        }
+    }
+
+    [Fact]
+    public async Task TryRunForUserAsync_MirrorOnNonPrimaryAccount_SkipsMirror()
+    {
+        // Two accounts on one Jellyfin user, both with mirror on. Only the primary owns
+        // the Jellyseerr-watchlist destination, so running the secondary must not POST or
+        // DELETE against the Jellyseerr watchlist (would clobber the primary's diff).
+        var (user, userId) = MakeUser("lachlan");
+        _userManager.GetUsers().Returns(new[] { user });
+
+        Plugin.Instance!.Configuration.Accounts.Add(new Account
+        {
+            UserJellyfinId = userId, LetterboxdUsername = "primary-lb", LetterboxdPassword = "x",
+            Enabled = true, EnableWatchlistSync = true, MirrorJellyseerrWatchlist = true, IsPrimary = true
+        });
+        Plugin.Instance!.Configuration.Accounts.Add(new Account
+        {
+            UserJellyfinId = userId, LetterboxdUsername = "secondary-lb", LetterboxdPassword = "x",
+            Enabled = true, EnableWatchlistSync = true, MirrorJellyseerrWatchlist = true, IsPrimary = false
+        });
+
+        Plugin.Instance!.Configuration.JellyseerrUrl = "http://jellyseerr.test";
+        Plugin.Instance!.Configuration.JellyseerrApiKey = "key";
+
+        var service = Substitute.For<ILetterboxdService>();
+        service.GetWatchlistTmdbIdsAsync(Arg.Any<string>()).Returns(new List<int> { 1233413 });
+        LetterboxdServiceFactory.OverrideForTesting = (_, _, _, _, _) => Task.FromResult(service);
+        _libraryManager.GetItemList(Arg.Any<InternalItemsQuery>()).Returns(new List<BaseItem>());
+
+        var handler = new JellyseerrHandler(req =>
+        {
+            var path = req.RequestUri!.AbsolutePath;
+            if (req.Method == HttpMethod.Get && path.EndsWith("/api/v1/user"))
+                return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                {
+                    Content = new System.Net.Http.StringContent(
+                        "{\"results\":[{\"id\":7,\"jellyfinUserId\":\"" + user.Id.ToString("N") + "\"}]}")
+                };
+            return new System.Net.Http.HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new System.Net.Http.StringContent("{\"results\":[]}")
+            };
+        });
+        WatchlistSyncRunner.JellyseerrClientFactoryOverride = (url, key, log) =>
+            new JellyseerrClient(url, key, log, handler);
+        try
+        {
+            // Target only the non-primary account.
+            var ok = await _runner.TryRunForUserAsync(userId, "test",
+                new Progress<double>(), CancellationToken.None, letterboxdUsername: "secondary-lb");
+
+            Assert.True(ok);
+            // Secondary must not mirror: no watchlist add/remove.
+            Assert.DoesNotContain(handler.Calls, r =>
+                r.Method == HttpMethod.Post && r.RequestUri!.AbsolutePath.EndsWith("/api/v1/watchlist"));
+            Assert.DoesNotContain(handler.Calls, r => r.Method == HttpMethod.Delete);
+        }
+        finally
+        {
+            WatchlistSyncRunner.JellyseerrClientFactoryOverride = null;
+            Plugin.Instance!.Configuration.JellyseerrUrl = null;
+            Plugin.Instance!.Configuration.JellyseerrApiKey = null;
+        }
+    }
 }

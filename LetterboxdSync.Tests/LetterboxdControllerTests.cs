@@ -1,9 +1,14 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using Jellyfin.Database.Implementations.Entities;
 using LetterboxdSync;
 using LetterboxdSync.Api;
 using LetterboxdSync.Configuration;
+using MediaBrowser.Controller.Entities;
+using MediaBrowser.Controller.Entities.Movies;
+using MediaBrowser.Model.Entities;
 using Microsoft.AspNetCore.Mvc;
 using NSubstitute;
 using Xunit;
@@ -755,5 +760,282 @@ public class LetterboxdControllerTests
         // The last 10 lines should be returned, ordered.
         Assert.Contains("line 99", returned[^1]);
         Assert.Equal(100, Prop<int>(result, "totalMatches"));
+    }
+
+    [Fact]
+    public void GetLogs_LogDirectoryMissing_ReturnsErrorPayload()
+    {
+        using var h = new ControllerTestHarness();
+        // Point the log directory at a path that doesn't exist → directory-not-found branch.
+        h.AppPaths.LogDirectoryPath.Returns(
+            System.IO.Path.Combine(h.TempDir, "does-not-exist-" + Guid.NewGuid().ToString("N")));
+
+        var result = h.Controller.GetLogs();
+
+        Assert.IsType<OkObjectResult>(result);
+        Assert.Empty(Prop<string[]>(result, "lines")!);
+        Assert.Contains("log directory not found", Prop<string>(result, "error") ?? string.Empty);
+    }
+
+    // ----- StartSync: conflict + named-account targeting -----
+
+    [Fact]
+    public void StartSync_SyncAlreadyRunning_ReturnsConflict()
+    {
+        using var h = new ControllerTestHarness(currentUserId: UserId);
+        h.AddAccount(UserId, "8bitproxy");
+
+        // Hold the global gate so LetterboxdSyncRunner.IsRunning reports true.
+        Assert.True(SyncGate.Instance.Wait(0));
+        try
+        {
+            var result = h.Controller.StartSync();
+            Assert.IsType<ConflictObjectResult>(result);
+        }
+        finally
+        {
+            SyncGate.Instance.Release();
+        }
+    }
+
+    [Fact]
+    public void StartSync_NamedAccountNotFound_ReturnsBadRequest()
+    {
+        using var h = new ControllerTestHarness(currentUserId: UserId);
+        h.AddAccount(UserId, "8bitproxy");
+
+        var result = h.Controller.StartSync(letterboxdUsername: "someone-else");
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Contains("someone-else", Prop<string>(result, "error") ?? string.Empty);
+    }
+
+    [Fact]
+    public void StartSync_NamedAccountFound_Returns202Accepted()
+    {
+        using var h = new ControllerTestHarness(currentUserId: UserId);
+        h.AddAccount(UserId, "8bitproxy");
+
+        var result = h.Controller.StartSync(letterboxdUsername: "8bitproxy");
+
+        Assert.IsType<AcceptedResult>(result);
+    }
+
+    // ----- StartWatchlistSync: user, conflict, named-account -----
+
+    [Fact]
+    public void StartWatchlistSync_NoUserClaim_ReturnsBadRequest()
+    {
+        using var h = new ControllerTestHarness(currentUserId: null);
+
+        var result = h.Controller.StartWatchlistSync();
+
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public void StartWatchlistSync_SyncAlreadyRunning_ReturnsConflict()
+    {
+        using var h = new ControllerTestHarness(currentUserId: UserId);
+        h.AddAccount(UserId, "8bitproxy", watchlistSync: true);
+
+        Assert.True(SyncGate.Instance.Wait(0));
+        try
+        {
+            var result = h.Controller.StartWatchlistSync();
+            Assert.IsType<ConflictObjectResult>(result);
+        }
+        finally
+        {
+            SyncGate.Instance.Release();
+        }
+    }
+
+    [Fact]
+    public void StartWatchlistSync_NamedAccountNotFound_ReturnsBadRequest()
+    {
+        using var h = new ControllerTestHarness(currentUserId: UserId);
+        h.AddAccount(UserId, "8bitproxy", watchlistSync: true);
+
+        var result = h.Controller.StartWatchlistSync(letterboxdUsername: "ghost");
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Contains("ghost", Prop<string>(result, "error") ?? string.Empty);
+    }
+
+    [Fact]
+    public void StartWatchlistSync_NamedAccountWatchlistDisabled_ReturnsBadRequest()
+    {
+        using var h = new ControllerTestHarness(currentUserId: UserId);
+        h.AddAccount(UserId, "8bitproxy", watchlistSync: false);
+
+        var result = h.Controller.StartWatchlistSync(letterboxdUsername: "8bitproxy");
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Contains("disabled", Prop<string>(result, "error") ?? string.Empty);
+    }
+
+    [Fact]
+    public void StartWatchlistSync_NamedAccountEnabled_Returns202Accepted()
+    {
+        using var h = new ControllerTestHarness(currentUserId: UserId);
+        h.AddAccount(UserId, "8bitproxy", watchlistSync: true);
+
+        var result = h.Controller.StartWatchlistSync(letterboxdUsername: "8bitproxy");
+
+        Assert.IsType<AcceptedResult>(result);
+    }
+
+    // ----- TestConnection: success + failure via the factory seam -----
+
+    [Fact]
+    public async Task TestConnection_AuthSucceeds_ReturnsOk()
+    {
+        using var h = new ControllerTestHarness();
+
+        var service = Substitute.For<ILetterboxdService>();
+        LetterboxdServiceFactory.OverrideForTesting = (_, _, _, _, _) =>
+            System.Threading.Tasks.Task.FromResult(service);
+        try
+        {
+            var result = await h.Controller.TestConnection(new TestConnectionRequest
+            {
+                LetterboxdUsername = "8bitproxy",
+                LetterboxdPassword = "secret"
+            });
+
+            Assert.IsType<OkObjectResult>(result);
+            Assert.True(Prop<bool>(result, "success"));
+            Assert.Equal("8bitproxy", Prop<string>(result, "letterboxdUsername"));
+        }
+        finally
+        {
+            LetterboxdServiceFactory.OverrideForTesting = null;
+        }
+    }
+
+    [Fact]
+    public async Task TestConnection_AuthThrows_ReturnsBadRequestWithError()
+    {
+        using var h = new ControllerTestHarness();
+
+        LetterboxdServiceFactory.OverrideForTesting = (_, _, _, _, _) =>
+            throw new Exception("bad credentials");
+        try
+        {
+            var result = await h.Controller.TestConnection(new TestConnectionRequest
+            {
+                LetterboxdUsername = "8bitproxy",
+                LetterboxdPassword = "wrong"
+            });
+
+            Assert.IsType<BadRequestObjectResult>(result);
+            Assert.False(Prop<bool>(result, "success"));
+            Assert.Contains("bad credentials", Prop<string>(result, "error") ?? string.Empty);
+        }
+        finally
+        {
+            LetterboxdServiceFactory.OverrideForTesting = null;
+        }
+    }
+
+    // ----- PostReview: named-account targeting + Jellyfin rating writeback -----
+
+    [Fact]
+    public async Task PostReview_NamedAccountNotFound_ReturnsBadRequest()
+    {
+        using var h = new ControllerTestHarness(currentUserId: UserId);
+        h.AddAccount(UserId, "8bitproxy");
+
+        var result = await h.Controller.PostReview(new ReviewRequest
+        {
+            FilmSlug = "sinners",
+            ReviewText = "great",
+            LetterboxdUsername = "not-mine"
+        });
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Contains("not-mine", Prop<string>(result, "error") ?? string.Empty);
+    }
+
+    [Fact]
+    public async Task PostReview_NamedAccountFound_PostsToThatAccountOnly()
+    {
+        using var h = new ControllerTestHarness(currentUserId: UserId);
+        h.AddAccount(UserId, "8bitproxy");
+        h.AddAccount(UserId, "deb");
+
+        var service = Substitute.For<ILetterboxdService>();
+        // Capture which Letterboxd username the factory was asked to authenticate.
+        var authedUsernames = new System.Collections.Generic.List<string>();
+        LetterboxdServiceFactory.OverrideForTesting = (u, _, _, _, _) =>
+        {
+            authedUsernames.Add(u);
+            return System.Threading.Tasks.Task.FromResult(service);
+        };
+        try
+        {
+            var result = await h.Controller.PostReview(new ReviewRequest
+            {
+                FilmSlug = "sinners",
+                ReviewText = "great",
+                LetterboxdUsername = "deb"
+            });
+
+            Assert.IsType<OkObjectResult>(result);
+            // Only the named account was targeted, not the fan-out across both.
+            Assert.Equal(new[] { "deb" }, authedUsernames);
+        }
+        finally
+        {
+            LetterboxdServiceFactory.OverrideForTesting = null;
+        }
+    }
+
+    [Fact]
+    public async Task PostReview_SuccessWithRating_MirrorsRatingIntoJellyfin()
+    {
+        // Real User/Movie instances: the controller matches the claim id against
+        // User.Id.ToString("N"), and User has no parameterless ctor to substitute.
+        var user = new User("lachlan", "test-provider-id", "test-reset-id");
+        var userId = user.Id.ToString("N");
+
+        using var h = new ControllerTestHarness(currentUserId: userId);
+        h.AddAccount(userId, "8bitproxy");
+        h.UserManager.GetUsers().Returns(new[] { user });
+
+        var movie = new Movie { Name = "Sinners" };
+        movie.SetProviderId(MetadataProvider.Tmdb, "1233413");
+        h.LibraryManager.GetItemList(Arg.Any<InternalItemsQuery>())
+            .Returns(new List<BaseItem> { movie });
+
+        var userData = new UserItemData { Key = "k" };
+        h.UserDataManager.GetUserData(user, movie).Returns(userData);
+
+        var service = Substitute.For<ILetterboxdService>();
+        LetterboxdServiceFactory.OverrideForTesting = (_, _, _, _, _) =>
+            System.Threading.Tasks.Task.FromResult(service);
+        try
+        {
+            var result = await h.Controller.PostReview(new ReviewRequest
+            {
+                FilmSlug = "sinners",
+                ReviewText = "great",
+                Rating = 4.5,
+                TmdbId = 1233413
+            });
+
+            Assert.IsType<OkObjectResult>(result);
+            // 4.5 Letterboxd stars → 9.0 Jellyfin rating, written back and persisted.
+            Assert.Equal(9.0, userData.Rating);
+            h.UserDataManager.Received(1).SaveUserData(
+                user, movie, userData,
+                MediaBrowser.Model.Entities.UserDataSaveReason.UpdateUserRating,
+                Arg.Any<System.Threading.CancellationToken>());
+        }
+        finally
+        {
+            LetterboxdServiceFactory.OverrideForTesting = null;
+        }
     }
 }

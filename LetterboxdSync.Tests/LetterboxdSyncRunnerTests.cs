@@ -592,4 +592,209 @@ public class LetterboxdSyncRunnerTests : IDisposable
         Assert.True(ok);
         Assert.True(factoryHit, "a film below the failure threshold should still be retried");
     }
+
+    // ----- SyncGate contention -----
+
+    [Fact]
+    public async Task TryRunForUserAsync_GateAlreadyHeld_ReturnsFalse()
+    {
+        var (user, userId) = MakeUser("lachlan");
+        _userManager.GetUsers().Returns(new[] { user });
+        AddAccount(userId);
+
+        Assert.True(await SyncGate.Instance.WaitAsync(0));
+        try
+        {
+            var ok = await _runner.TryRunForUserAsync(userId, "manual",
+                new Progress<double>(), CancellationToken.None);
+
+            Assert.False(ok);
+            _libraryManager.DidNotReceive().GetItemList(Arg.Any<InternalItemsQuery>());
+        }
+        finally
+        {
+            SyncGate.Instance.Release();
+        }
+    }
+
+    [Fact]
+    public async Task RunForAllAsync_GateAlreadyHeld_SkipsImmediately()
+    {
+        var (user, userId) = MakeUser("lachlan");
+        _userManager.GetUsers().Returns(new[] { user });
+        AddAccount(userId);
+
+        Assert.True(await SyncGate.Instance.WaitAsync(0));
+        try
+        {
+            await _runner.RunForAllAsync(new Progress<double>(), "scheduled", CancellationToken.None);
+
+            _libraryManager.DidNotReceive().GetItemList(Arg.Any<InternalItemsQuery>());
+        }
+        finally
+        {
+            SyncGate.Instance.Release();
+        }
+    }
+
+    // ----- Named-account targeting -----
+
+    [Fact]
+    public async Task TryRunForUserAsync_NamedAccountNotFound_ReturnsFalse()
+    {
+        var (user, userId) = MakeUser("lachlan");
+        _userManager.GetUsers().Returns(new[] { user });
+        AddAccount(userId); // username "lb-user"
+
+        var ok = await _runner.TryRunForUserAsync(userId, "manual",
+            new Progress<double>(), CancellationToken.None, letterboxdUsername: "someone-else");
+
+        Assert.False(ok);
+        _libraryManager.DidNotReceive().GetItemList(Arg.Any<InternalItemsQuery>());
+    }
+
+    [Fact]
+    public async Task TryRunForUserAsync_NamedAccountFound_RunsThatAccountOnly()
+    {
+        var (user, userId) = MakeUser("lachlan");
+        _userManager.GetUsers().Returns(new[] { user });
+        AddAccount(userId); // username "lb-user"
+
+        // Empty library so SyncOneUserAsync exits before authenticating; we only need to
+        // prove the named-account lookup resolved and the run reached the library query.
+        _libraryManager.GetItemList(Arg.Any<InternalItemsQuery>()).Returns(new List<BaseItem>());
+
+        var ok = await _runner.TryRunForUserAsync(userId, "manual",
+            new Progress<double>(), CancellationToken.None, letterboxdUsername: "lb-user");
+
+        Assert.True(ok);
+        _libraryManager.Received(1).GetItemList(Arg.Any<InternalItemsQuery>());
+    }
+
+    // ----- SkipPreviouslySynced filtering -----
+
+    [Fact]
+    public async Task TryRunForUserAsync_SkipPreviouslySynced_FiltersAll_NoAuthAttempt()
+    {
+        // Account skips films already in local history. The one library film was
+        // successfully synced for its viewing date, so BuildSyncQueue drops it and the
+        // runner exits before authenticating.
+        var (user, userId) = MakeUser("lachlan");
+        _userManager.GetUsers().Returns(new[] { user });
+        AddAccount(userId, skipPreviouslySynced: true);
+
+        var viewing = new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Utc);
+        var movie = MakeMovie(1233413);
+        _libraryManager.GetItemList(Arg.Any<InternalItemsQuery>()).Returns(new List<BaseItem> { movie });
+        _userDataManager.GetUserData(user, movie).Returns(new UserItemData
+        {
+            Key = "k", Played = true, LastPlayedDate = viewing
+        });
+
+        SyncHistory.Record(new SyncEvent
+        {
+            FilmTitle = "Sinners", TmdbId = 1233413, Username = "lachlan",
+            Timestamp = DateTime.UtcNow, ViewingDate = viewing,
+            Status = SyncStatus.Success, Source = "test"
+        });
+
+        var factoryHit = false;
+        LetterboxdServiceFactory.OverrideForTesting = (_, _, _, _, _) =>
+        {
+            factoryHit = true;
+            return Task.FromResult(Substitute.For<ILetterboxdService>());
+        };
+
+        var ok = await _runner.TryRunForUserAsync(userId, "test",
+            new Progress<double>(), CancellationToken.None);
+
+        Assert.True(ok);
+        Assert.False(factoryHit);
+    }
+
+    // ----- StopOnFailure -----
+
+    [Fact]
+    public async Task TryRunForUserAsync_StopOnFailure_HaltsAfterFirstFailure()
+    {
+        // Two films, both lookups throw, StopOnFailure on → the runner must break after
+        // the first failure rather than attempting the second.
+        var (user, userId) = MakeUser("lachlan");
+        _userManager.GetUsers().Returns(new[] { user });
+        Plugin.Instance!.Configuration.Accounts.Add(new Account
+        {
+            UserJellyfinId = userId, LetterboxdUsername = "lb-user", LetterboxdPassword = "secret",
+            Enabled = true, SkipPreviouslySynced = false, StopOnFailure = true
+        });
+
+        var m1 = MakeMovie(1233413, "Sinners");
+        var m2 = MakeMovie(550, "Fight Club");
+        _libraryManager.GetItemList(Arg.Any<InternalItemsQuery>())
+            .Returns(new List<BaseItem> { m1, m2 });
+        // Real watch dates so the no-watch-date suppression doesn't filter them out.
+        _userDataManager.GetUserData(user, m1).Returns(
+            new UserItemData { Key = "k1", Played = true, LastPlayedDate = DateTime.UtcNow });
+        _userDataManager.GetUserData(user, m2).Returns(
+            new UserItemData { Key = "k2", Played = true, LastPlayedDate = DateTime.UtcNow });
+
+        var service = Substitute.For<ILetterboxdService>();
+        // Throwing on lookup happens before the runner's inter-film delay, keeping this fast.
+        service.LookupFilmByTmdbIdAsync(Arg.Any<int>())
+            .Returns<Task<FilmResult>>(_ => throw new Exception("Cloudflare 403"));
+        LetterboxdServiceFactory.OverrideForTesting = (_, _, _, _, _) => Task.FromResult(service);
+
+        var ok = await _runner.TryRunForUserAsync(userId, "test",
+            new Progress<double>(), CancellationToken.None);
+
+        Assert.True(ok);
+        // Only the first film was attempted; the break stopped the second.
+        await service.Received(1).LookupFilmByTmdbIdAsync(Arg.Any<int>());
+    }
+
+    // ----- Local-history duplicate backstop -----
+
+    [Fact]
+    public async Task TryRunForUserAsync_LocalHistoryShowsRecentSync_SuppressesDuplicate()
+    {
+        // Letterboxd's own duplicate check comes back empty (null lastDate, e.g. a
+        // Cloudflare 403), but our append-only history shows a successful sync for this
+        // film on the same viewing date. The backstop must suppress the re-post rather
+        // than risk a duplicate diary entry.
+        var (user, userId) = MakeUser("lachlan");
+        _userManager.GetUsers().Returns(new[] { user });
+        AddAccount(userId); // SkipPreviouslySynced defaults to false here
+
+        var viewing = DateTime.UtcNow;
+        var movie = MakeMovie(1233413);
+        _libraryManager.GetItemList(Arg.Any<InternalItemsQuery>()).Returns(new List<BaseItem> { movie });
+        _userDataManager.GetUserData(user, movie).Returns(new UserItemData
+        {
+            Key = "k", Played = true, LastPlayedDate = viewing
+        });
+
+        // Prior successful sync on the same viewing date → not a rewatch → suppress.
+        SyncHistory.Record(new SyncEvent
+        {
+            FilmTitle = "Sinners", FilmSlug = "sinners-2025", TmdbId = 1233413, Username = "lachlan",
+            Timestamp = DateTime.UtcNow.AddHours(-1), ViewingDate = viewing.Date,
+            Status = SyncStatus.Success, Source = "test"
+        });
+
+        var service = Substitute.For<ILetterboxdService>();
+        service.LookupFilmByTmdbIdAsync(Arg.Any<int>())
+            .Returns(new FilmResult("sinners-2025", "KQMM", "PROD-1"));
+        // Null diary date → Letterboxd-side IsDuplicate is false, forcing the local backstop.
+        service.GetDiaryInfoAsync(Arg.Any<string>(), Arg.Any<string>())
+            .Returns(new DiaryInfo(null, false));
+        LetterboxdServiceFactory.OverrideForTesting = (_, _, _, _, _) => Task.FromResult(service);
+
+        var ok = await _runner.TryRunForUserAsync(userId, "test",
+            new Progress<double>(), CancellationToken.None);
+
+        Assert.True(ok);
+        // Backstop fired: the film is never marked as watched on Letterboxd.
+        await service.DidNotReceive().MarkAsWatchedAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<DateTime?>(), Arg.Any<bool>(),
+            Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<double?>());
+    }
 }

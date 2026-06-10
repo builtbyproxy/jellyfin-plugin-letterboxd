@@ -345,6 +345,55 @@ public class JellyseerrClientTests
         Assert.Equal("9", sentHeader);
     }
 
+    [Fact]
+    public async Task AddToWatchlistAsync_ServerError_ReturnsFalse()
+    {
+        // A non-conflict failure (500) is a genuine failure, not an idempotent dup.
+        var handler = new SeerrHandler(_ => new HttpResponseMessage(HttpStatusCode.InternalServerError)
+        {
+            Content = new StringContent("boom")
+        });
+
+        using var client = new JellyseerrClient(BaseUrl, ApiKey, NullLogger.Instance, handler);
+        Assert.False(await client.AddToWatchlistAsync(42, 9));
+    }
+
+    [Fact]
+    public async Task RemoveFromWatchlistAsync_ServerError_ReturnsFalse()
+    {
+        var handler = new SeerrHandler(_ => new HttpResponseMessage(HttpStatusCode.InternalServerError)
+        {
+            Content = new StringContent("boom")
+        });
+
+        using var client = new JellyseerrClient(BaseUrl, ApiKey, NullLogger.Instance, handler);
+        Assert.False(await client.RemoveFromWatchlistAsync(42, 9));
+    }
+
+    [Fact]
+    public async Task GetUserWatchlistTmdbIdsAsync_FetchFails_ReturnsEmpty()
+    {
+        // A failed page fetch must not throw; it returns whatever was gathered (nothing).
+        var handler = new SeerrHandler(_ => new HttpResponseMessage(HttpStatusCode.InternalServerError)
+        {
+            Content = new StringContent("nope")
+        });
+
+        using var client = new JellyseerrClient(BaseUrl, ApiKey, NullLogger.Instance, handler);
+        var ids = await client.GetUserWatchlistTmdbIdsAsync(9);
+        Assert.Empty(ids);
+    }
+
+    [Fact]
+    public async Task GetMovieMediaStatusAsync_TransportThrows_ReturnsNull()
+    {
+        // Network-layer exceptions are swallowed so a status pre-check never breaks a run.
+        var handler = new SeerrHandler(_ => throw new HttpRequestException("connection reset"));
+
+        using var client = new JellyseerrClient(BaseUrl, ApiKey, NullLogger.Instance, handler);
+        Assert.Null(await client.GetMovieMediaStatusAsync(100));
+    }
+
     private static HttpResponseMessage JsonResponse(string body)
         => new(HttpStatusCode.OK) { Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json") };
 
