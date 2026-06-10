@@ -95,7 +95,18 @@ public class JellyseerrClient : IDisposable
     /// 6=BLOCKLISTED, 7=DELETED.
     /// </summary>
     public async Task<int?> GetMovieMediaStatusAsync(int tmdbId)
+        => (await GetMovieInfoAsync(tmdbId).ConfigureAwait(false)).Status;
+
+    /// <summary>
+    /// Single movie lookup returning both the Jellyseerr MediaStatus and the set of Jellyseerr
+    /// user IDs that already have a request for the title. Status is null when Jellyseerr has no
+    /// record of the title (safe to request) or the call fails; the requester set is empty in
+    /// those cases. Status enum: 1=UNKNOWN, 2=PENDING, 3=PROCESSING, 4=PARTIALLY_AVAILABLE,
+    /// 5=AVAILABLE, 6=BLOCKLISTED, 7=DELETED.
+    /// </summary>
+    private async Task<(int? Status, HashSet<int> RequesterUserIds)> GetMovieInfoAsync(int tmdbId)
     {
+        var requesters = new HashSet<int>();
         var url = $"{_baseUrl}/api/v1/movie/{tmdbId}";
         try
         {
@@ -104,26 +115,41 @@ public class JellyseerrClient : IDisposable
             {
                 _logger.LogDebug("Jellyseerr movie lookup non-success for TMDb {TmdbId}: {Status}",
                     tmdbId, (int)response.StatusCode);
-                return null;
+                return (null, requesters);
             }
 
             var json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
             using var doc = JsonDocument.Parse(json);
             if (!doc.RootElement.TryGetProperty("mediaInfo", out var mediaInfo) ||
                 mediaInfo.ValueKind != JsonValueKind.Object)
-                return null;
+                return (null, requesters);
 
-            if (!mediaInfo.TryGetProperty("status", out var statusEl) ||
-                statusEl.ValueKind != JsonValueKind.Number)
-                return null;
+            int? status = null;
+            if (mediaInfo.TryGetProperty("status", out var statusEl) &&
+                statusEl.ValueKind == JsonValueKind.Number)
+                status = statusEl.GetInt32();
 
-            return statusEl.GetInt32();
+            // mediaInfo.requests[].requestedBy.id — who already has a request for this title.
+            if (mediaInfo.TryGetProperty("requests", out var requests) &&
+                requests.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var req in requests.EnumerateArray())
+                {
+                    if (req.TryGetProperty("requestedBy", out var by) &&
+                        by.ValueKind == JsonValueKind.Object &&
+                        by.TryGetProperty("id", out var reqUserId) &&
+                        reqUserId.ValueKind == JsonValueKind.Number)
+                        requesters.Add(reqUserId.GetInt32());
+                }
+            }
+
+            return (status, requesters);
         }
         catch (Exception ex)
         {
             _logger.LogDebug("Jellyseerr movie lookup errored for TMDb {TmdbId}: {Message}",
                 tmdbId, ex.Message);
-            return null;
+            return (null, requesters);
         }
     }
 
@@ -141,19 +167,50 @@ public class JellyseerrClient : IDisposable
 
     /// <summary>
     /// Creates a movie request in Jellyseerr for the given TMDb ID, attributed to the given Jellyseerr user.
-    /// Pre-checks the media status and skips the POST when Jellyseerr already has a record of the title;
-    /// without this guard Jellyseerr cheerfully creates a duplicate request every run for items already
-    /// pending / processing / available, instead of returning 409.
+    /// <para>
+    /// Default (<paramref name="backfillAvailable"/> false): pre-checks media status and skips the POST when
+    /// Jellyseerr already has a record of the title (pending / processing / available), so re-runs don't pile
+    /// up duplicates for films the library already covers.
+    /// </para>
+    /// <para>
+    /// Backfill (<paramref name="backfillAvailable"/> true): skips only when the title is blocklisted or THIS
+    /// user already has a request for it. Available titles with no request from this user are still requested —
+    /// Jellyseerr 3.x accepts a request for available media as long as no active request exists, which restores
+    /// an attributed requester trail for films that entered the library outside Jellyseerr. If another user
+    /// holds the single active request, Jellyseerr returns 409 and we report <see cref="RequestResult.AlreadyExists"/>.
+    /// </para>
     /// </summary>
-    public async Task<RequestResult> RequestMovieAsync(int tmdbId, int jellyseerrUserId)
+    public async Task<RequestResult> RequestMovieAsync(int tmdbId, int jellyseerrUserId, bool backfillAvailable = false)
     {
-        var existingStatus = await GetMovieMediaStatusAsync(tmdbId).ConfigureAwait(false);
-        // Re-request DELETED (7); skip everything else above UNKNOWN (1).
-        if (existingStatus.HasValue && existingStatus.Value > 1 && existingStatus.Value != 7)
+        var (status, requesters) = await GetMovieInfoAsync(tmdbId).ConfigureAwait(false);
+
+        // Never request blocklisted media (6), regardless of mode.
+        if (status == 6)
         {
-            _logger.LogDebug("Skipping Jellyseerr request for TMDb {TmdbId}: already has status {Status}",
-                tmdbId, existingStatus.Value);
+            _logger.LogDebug("Skipping Jellyseerr request for TMDb {TmdbId}: blocklisted", tmdbId);
             return RequestResult.AlreadyExists;
+        }
+
+        if (backfillAvailable)
+        {
+            // Only this user's own existing request blocks a backfill; an available-but-unrequested
+            // title is exactly what we want to attribute.
+            if (requesters.Contains(jellyseerrUserId))
+            {
+                _logger.LogDebug("Skipping Jellyseerr backfill for TMDb {TmdbId}: user {UserId} already has a request",
+                    tmdbId, jellyseerrUserId);
+                return RequestResult.AlreadyExists;
+            }
+        }
+        else
+        {
+            // Re-request DELETED (7); skip everything else above UNKNOWN (1).
+            if (status.HasValue && status.Value > 1 && status.Value != 7)
+            {
+                _logger.LogDebug("Skipping Jellyseerr request for TMDb {TmdbId}: already has status {Status}",
+                    tmdbId, status.Value);
+                return RequestResult.AlreadyExists;
+            }
         }
 
         var url = $"{_baseUrl}/api/v1/request";
@@ -165,10 +222,11 @@ public class JellyseerrClient : IDisposable
             return RequestResult.Requested;
 
         var responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-        // Belt-and-braces: Jellyseerr returns 409 when already requested; treat as a no-op.
+        // Belt-and-braces: Jellyseerr returns 409 when an active request already exists; treat as a no-op.
         if ((int)response.StatusCode == 409 ||
             responseBody.Contains("REQUEST_EXISTS", StringComparison.OrdinalIgnoreCase) ||
             responseBody.Contains("already requested", StringComparison.OrdinalIgnoreCase) ||
+            responseBody.Contains("already exists", StringComparison.OrdinalIgnoreCase) ||
             responseBody.Contains("already available", StringComparison.OrdinalIgnoreCase))
         {
             _logger.LogDebug("Jellyseerr already has request for TMDb {TmdbId} (user {UserId}): {Body}",

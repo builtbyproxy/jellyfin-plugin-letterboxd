@@ -283,19 +283,25 @@ public class WatchlistSyncRunner
 
         if (account.AutoRequestWatchlist)
         {
-            SyncProgress.SetPhase($"Requesting missing films via Jellyseerr for {user.Username}");
-            var unmatchedTmdbIds = tmdbIds.Where(id => !matchedTmdbIds.Contains(id)).ToList();
-            if (unmatchedTmdbIds.Count == 0) return;
+            // Default: only films missing from the library. Backfill mode: the whole watchlist,
+            // so already-available films also get an attributed request (per-user dedup happens
+            // inside RequestMovieAsync, which skips titles this user already requested).
+            var requestIds = account.BackfillAvailableRequests
+                ? tmdbIds
+                : tmdbIds.Where(id => !matchedTmdbIds.Contains(id)).ToList();
+
+            SyncProgress.SetPhase($"Requesting {(account.BackfillAvailableRequests ? "watchlist" : "missing")} films via Jellyseerr for {user.Username}");
+            if (requestIds.Count == 0) return;
 
             var requested = 0;
             var alreadyExists = 0;
             var failed = 0;
-            foreach (var tmdbId in unmatchedTmdbIds)
+            foreach (var tmdbId in requestIds)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
-                    var result = await jellyseerr!.RequestMovieAsync(tmdbId, jellyseerrUserId.Value).ConfigureAwait(false);
+                    var result = await jellyseerr!.RequestMovieAsync(tmdbId, jellyseerrUserId.Value, account.BackfillAvailableRequests).ConfigureAwait(false);
                     switch (result)
                     {
                         case JellyseerrClient.RequestResult.Requested: requested++; break;
@@ -310,8 +316,9 @@ public class WatchlistSyncRunner
                 }
             }
             _logger.LogInformation(
-                "Jellyseerr auto-request for {Username}: {Requested} new, {Existing} already on Jellyseerr, {Failed} failed of {Total} unmatched",
-                user.Username, requested, alreadyExists, failed, unmatchedTmdbIds.Count);
+                "Jellyseerr auto-request for {Username} ({Mode}): {Requested} new, {Existing} already on Jellyseerr, {Failed} failed of {Total} considered",
+                user.Username, account.BackfillAvailableRequests ? "backfill" : "unmatched-only",
+                requested, alreadyExists, failed, requestIds.Count);
         }
     }
 

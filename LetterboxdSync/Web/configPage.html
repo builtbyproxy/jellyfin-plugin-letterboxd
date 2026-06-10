@@ -400,6 +400,10 @@
                                 + '<span class="lb-check-title">Auto-request unmatched watchlist films via Jellyseerr</span>'
                                 + '<span class="lb-check-desc">When a watchlisted film is not in the Jellyfin library, submit a request to Jellyseerr (configure URL + API key above). Requests are attributed to this user\'s Jellyseerr account (matched by Jellyfin User ID). Requires Jellyseerr to be configured. Skips titles Jellyseerr already has pending, processing, or available, so re-runs no longer create duplicates.</span>'
                                 + '</span></label>'
+                                + '<label><input type="checkbox" class="backfillAvailableRequests" /><span class="lb-check-text">'
+                                + '<span class="lb-check-title">Also backfill requests for already-available watchlist films</span>'
+                                + '<span class="lb-check-desc">Extends auto-request to films that are already in the library. Creates an attributed Jellyseerr request for any watchlisted film this user has no request for, so films that arrived outside Jellyseerr (manual Radarr add, deleted request) still show a requester. Creates request rows for already-available media; it does not trigger re-downloads. Requires "Auto-request" above.</span>'
+                                + '</span></label>'
                                 + '<label><input type="checkbox" class="mirrorJellyseerrWatchlist" /><span class="lb-check-text">'
                                 + '<span class="lb-check-title">Mirror Letterboxd watchlist into Jellyseerr watchlist</span>'
                                 + '<span class="lb-check-desc">Two-way mirror against your Jellyseerr user\'s own watchlist (the one shown in the Jellyseerr UI). Adds films you\'ve added on Letterboxd, removes films you\'ve taken off. Only touches movies, so manually-added Jellyseerr TV entries are left alone. Requires Jellyseerr to be configured.</span>'
@@ -443,6 +447,7 @@
                                 entry.querySelector('.dateFilterDays').value = account.DateFilterDays || 7;
                                 entry.querySelector('.enableWatchlistSync').checked = account.EnableWatchlistSync === true;
                                 entry.querySelector('.autoRequestWatchlist').checked = account.AutoRequestWatchlist === true;
+                                entry.querySelector('.backfillAvailableRequests').checked = account.BackfillAvailableRequests === true;
                                 entry.querySelector('.mirrorJellyseerrWatchlist').checked = account.MirrorJellyseerrWatchlist === true;
                                 entry.querySelector('.enableDiaryImport').checked = account.EnableDiaryImport === true;
                                 entry.querySelector('.skipPreviouslySynced').checked = account.SkipPreviouslySynced !== false;
@@ -475,6 +480,7 @@
                                     DateFilterDays: parseInt(entry.querySelector('.dateFilterDays').value, 10) || 7,
                                     EnableWatchlistSync: entry.querySelector('.enableWatchlistSync').checked,
                                     AutoRequestWatchlist: entry.querySelector('.autoRequestWatchlist').checked,
+                                    BackfillAvailableRequests: entry.querySelector('.backfillAvailableRequests').checked,
                                     MirrorJellyseerrWatchlist: entry.querySelector('.mirrorJellyseerrWatchlist').checked,
                                     EnableDiaryImport: entry.querySelector('.enableDiaryImport').checked,
                                     SkipPreviouslySynced: entry.querySelector('.skipPreviouslySynced').checked,

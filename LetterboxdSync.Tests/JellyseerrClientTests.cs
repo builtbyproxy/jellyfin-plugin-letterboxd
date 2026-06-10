@@ -120,6 +120,103 @@ public class JellyseerrClientTests
     }
 
     [Fact]
+    public async Task RequestMovieAsync_Backfill_AvailableWithNoRequest_PostsAttributedRequest()
+    {
+        // The backfill case: media is AVAILABLE (status 5) but nobody has a request for it
+        // (entered the library outside Jellyseerr). Backfill mode must still POST so a requester
+        // trail exists. Default mode would have skipped on status 5.
+        var posted = false;
+        var handler = new SeerrHandler(req =>
+        {
+            if (req.Method == HttpMethod.Get && req.RequestUri!.AbsolutePath.EndsWith("/api/v1/movie/100"))
+                return JsonResponse("{\"id\":100,\"mediaInfo\":{\"status\":5,\"requests\":[]}}");
+
+            if (req.Method == HttpMethod.Post && req.RequestUri!.AbsolutePath.EndsWith("/api/v1/request"))
+            {
+                posted = true;
+                return new HttpResponseMessage(HttpStatusCode.Created);
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        using var client = new JellyseerrClient(BaseUrl, ApiKey, NullLogger.Instance, handler);
+        var result = await client.RequestMovieAsync(100, 7, backfillAvailable: true);
+
+        Assert.Equal(JellyseerrClient.RequestResult.Requested, result);
+        Assert.True(posted, "backfill should request an available title that has no request");
+    }
+
+    [Fact]
+    public async Task RequestMovieAsync_Backfill_UserAlreadyHasRequest_DoesNotPost()
+    {
+        // Per-user dedup: if THIS user (7) already holds a request, backfill must not pile on.
+        var posted = false;
+        var handler = new SeerrHandler(req =>
+        {
+            if (req.Method == HttpMethod.Get && req.RequestUri!.AbsolutePath.EndsWith("/api/v1/movie/100"))
+                return JsonResponse("{\"id\":100,\"mediaInfo\":{\"status\":5,\"requests\":[{\"requestedBy\":{\"id\":7}}]}}");
+
+            if (req.Method == HttpMethod.Post) posted = true;
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        using var client = new JellyseerrClient(BaseUrl, ApiKey, NullLogger.Instance, handler);
+        var result = await client.RequestMovieAsync(100, 7, backfillAvailable: true);
+
+        Assert.Equal(JellyseerrClient.RequestResult.AlreadyExists, result);
+        Assert.False(posted, "backfill must not duplicate this user's own request");
+    }
+
+    [Fact]
+    public async Task RequestMovieAsync_Backfill_AvailableButOtherUserRequested_PostsForThisUser()
+    {
+        // Another user (9) has a request; user 7 still gets their own attributed request when
+        // Jellyseerr accepts it. (If Jellyseerr's single-active-request rule rejects it, the
+        // POST 409 path classifies it AlreadyExists — covered separately.)
+        var posted = false;
+        var handler = new SeerrHandler(req =>
+        {
+            if (req.Method == HttpMethod.Get && req.RequestUri!.AbsolutePath.EndsWith("/api/v1/movie/100"))
+                return JsonResponse("{\"id\":100,\"mediaInfo\":{\"status\":5,\"requests\":[{\"requestedBy\":{\"id\":9}}]}}");
+
+            if (req.Method == HttpMethod.Post && req.RequestUri!.AbsolutePath.EndsWith("/api/v1/request"))
+            {
+                posted = true;
+                return new HttpResponseMessage(HttpStatusCode.Created);
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        using var client = new JellyseerrClient(BaseUrl, ApiKey, NullLogger.Instance, handler);
+        var result = await client.RequestMovieAsync(100, 7, backfillAvailable: true);
+
+        Assert.Equal(JellyseerrClient.RequestResult.Requested, result);
+        Assert.True(posted);
+    }
+
+    [Fact]
+    public async Task RequestMovieAsync_Backfill_Blocklisted_DoesNotPost()
+    {
+        var posted = false;
+        var handler = new SeerrHandler(req =>
+        {
+            if (req.Method == HttpMethod.Get && req.RequestUri!.AbsolutePath.EndsWith("/api/v1/movie/100"))
+                return JsonResponse("{\"id\":100,\"mediaInfo\":{\"status\":6,\"requests\":[]}}"); // BLOCKLISTED
+
+            if (req.Method == HttpMethod.Post) posted = true;
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        using var client = new JellyseerrClient(BaseUrl, ApiKey, NullLogger.Instance, handler);
+        var result = await client.RequestMovieAsync(100, 7, backfillAvailable: true);
+
+        Assert.Equal(JellyseerrClient.RequestResult.AlreadyExists, result);
+        Assert.False(posted, "blocklisted media must never be requested");
+    }
+
+    [Fact]
     public async Task GetUserWatchlistTmdbIdsAsync_PaginatesViaPageParamAndFiltersToMovies()
     {
         // Jellyseerr paginates the user-watchlist endpoint with `page=N`, NOT take/skip

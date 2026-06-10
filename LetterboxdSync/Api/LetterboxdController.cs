@@ -249,6 +249,7 @@ public class LetterboxdController : ControllerBase
             enableWatchlistSync = account.EnableWatchlistSync,
             enableDiaryImport = account.EnableDiaryImport,
             autoRequestWatchlist = account.AutoRequestWatchlist,
+            backfillAvailableRequests = account.BackfillAvailableRequests,
             mirrorJellyseerrWatchlist = account.MirrorJellyseerrWatchlist,
             skipPreviouslySynced = account.SkipPreviouslySynced,
             stopOnFailure = account.StopOnFailure,
@@ -283,6 +284,7 @@ public class LetterboxdController : ControllerBase
         account.EnableWatchlistSync = request.EnableWatchlistSync;
         account.EnableDiaryImport = request.EnableDiaryImport;
         account.AutoRequestWatchlist = request.AutoRequestWatchlist;
+        account.BackfillAvailableRequests = request.BackfillAvailableRequests;
         account.MirrorJellyseerrWatchlist = request.MirrorJellyseerrWatchlist;
         account.SkipPreviouslySynced = request.SkipPreviouslySynced;
         account.StopOnFailure = request.StopOnFailure;
@@ -331,6 +333,7 @@ public class LetterboxdController : ControllerBase
                 enableWatchlistSync = a.EnableWatchlistSync,
                 enableDiaryImport = a.EnableDiaryImport,
                 autoRequestWatchlist = a.AutoRequestWatchlist,
+                backfillAvailableRequests = a.BackfillAvailableRequests,
                 mirrorJellyseerrWatchlist = a.MirrorJellyseerrWatchlist,
                 skipPreviouslySynced = a.SkipPreviouslySynced,
                 stopOnFailure = a.StopOnFailure,
@@ -391,6 +394,7 @@ public class LetterboxdController : ControllerBase
                 EnableWatchlistSync = req.EnableWatchlistSync,
                 EnableDiaryImport = req.EnableDiaryImport,
                 AutoRequestWatchlist = req.AutoRequestWatchlist,
+                BackfillAvailableRequests = req.BackfillAvailableRequests,
                 MirrorJellyseerrWatchlist = req.MirrorJellyseerrWatchlist,
                 SkipPreviouslySynced = req.SkipPreviouslySynced,
                 StopOnFailure = req.StopOnFailure,
