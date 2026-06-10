@@ -187,6 +187,8 @@ public class LetterboxdSyncRunnerTests : IDisposable
 
         var movie = MakeMovie(1233413);
         _libraryManager.GetItemList(Arg.Any<InternalItemsQuery>()).Returns(new List<BaseItem> { movie });
+        _userDataManager.GetUserData(user, movie).Returns(
+            new UserItemData { Key = "k", Played = true, LastPlayedDate = DateTime.UtcNow });
 
         LetterboxdServiceFactory.OverrideForTesting = (_, _, _, _, _) =>
             throw new Exception("auth failed");
@@ -286,6 +288,9 @@ public class LetterboxdSyncRunnerTests : IDisposable
 
         var movie = MakeMovie(1233413);
         _libraryManager.GetItemList(Arg.Any<InternalItemsQuery>()).Returns(new List<BaseItem> { movie });
+        // Real watch today so viewingDate is today and matches the diary entry below.
+        _userDataManager.GetUserData(user, movie).Returns(
+            new UserItemData { Key = "k", Played = true, LastPlayedDate = DateTime.Now });
 
         // Diary already has an entry for today → IsDuplicate = true → MarkAsWatched is NOT called.
         var service = Substitute.For<ILetterboxdService>();
@@ -313,6 +318,8 @@ public class LetterboxdSyncRunnerTests : IDisposable
 
         var movie = MakeMovie(1233413);
         _libraryManager.GetItemList(Arg.Any<InternalItemsQuery>()).Returns(new List<BaseItem> { movie });
+        _userDataManager.GetUserData(user, movie).Returns(
+            new UserItemData { Key = "k", Played = true, LastPlayedDate = DateTime.UtcNow });
 
         var service = Substitute.For<ILetterboxdService>();
         service.LookupFilmByTmdbIdAsync(Arg.Any<int>())
@@ -341,6 +348,8 @@ public class LetterboxdSyncRunnerTests : IDisposable
 
         var movie = MakeMovie(1233413);
         _libraryManager.GetItemList(Arg.Any<InternalItemsQuery>()).Returns(new List<BaseItem> { movie });
+        _userDataManager.GetUserData(user, movie).Returns(
+            new UserItemData { Key = "k", Played = true, LastPlayedDate = DateTime.UtcNow });
 
         // Letterboxd lookup throws (e.g. Cloudflare 403). Runner should catch,
         // record a failed sync event, and complete — exception doesn't escape.
@@ -472,6 +481,116 @@ public class LetterboxdSyncRunnerTests : IDisposable
 
         Assert.True(ok);
         Assert.True(factoryHit, "real playback after diary import should re-enable export");
+    }
+
+    // ----- No-watch-date suppression (generalises the issue #32 fix) -----
+
+    [Fact]
+    public async Task TryRunForUserAsync_PlayedFilmWithoutLastPlayedDate_NotImported_DoesNotExport()
+    {
+        // A film marked played on Jellyfin (manually, or before tracking) with no
+        // LastPlayedDate and no diary-import marker. viewingDate would otherwise default to
+        // today and drift, posting a phantom rewatch on every other run. The runner must
+        // skip it outright until a real play date exists.
+        var (user, userId) = MakeUser("lachlan");
+        _userManager.GetUsers().Returns(new[] { user });
+        AddAccount(userId);
+
+        var movie = MakeMovie(1233413);
+        _libraryManager.GetItemList(Arg.Any<InternalItemsQuery>()).Returns(new List<BaseItem> { movie });
+        _userDataManager.GetUserData(user, movie).Returns(
+            new UserItemData { Key = "k", Played = true, LastPlayedDate = null });
+
+        var factoryHit = false;
+        LetterboxdServiceFactory.OverrideForTesting = (_, _, _, _, _) =>
+        {
+            factoryHit = true;
+            return Task.FromResult(Substitute.For<ILetterboxdService>());
+        };
+
+        var ok = await _runner.TryRunForUserAsync(userId, "scheduled",
+            new Progress<double>(), CancellationToken.None);
+
+        Assert.True(ok);
+        Assert.False(factoryHit);
+    }
+
+    // ----- Repeated-failure abandonment -----
+
+    [Fact]
+    public async Task TryRunForUserAsync_FilmWithMaxConsecutiveFailures_NotRetried()
+    {
+        // A film that has failed MaxConsecutiveSyncFailures times in a row must be left
+        // alone, not re-queued (and certainly not prioritised) every run.
+        var (user, userId) = MakeUser("lachlan");
+        _userManager.GetUsers().Returns(new[] { user });
+        AddAccount(userId);
+
+        var movie = MakeMovie(1233413);
+        _libraryManager.GetItemList(Arg.Any<InternalItemsQuery>()).Returns(new List<BaseItem> { movie });
+        // A real watch date, so only the failure-abandon filter can remove it.
+        _userDataManager.GetUserData(user, movie).Returns(
+            new UserItemData { Key = "k", Played = true, LastPlayedDate = DateTime.UtcNow });
+
+        for (var i = 0; i < LetterboxdSyncRunner.MaxConsecutiveSyncFailures; i++)
+            SyncHistory.Record(new SyncEvent
+            {
+                FilmTitle = "Sinners", TmdbId = 1233413, Username = "lachlan",
+                Timestamp = DateTime.UtcNow.AddMinutes(-i), Status = SyncStatus.Failed
+            });
+
+        var factoryHit = false;
+        LetterboxdServiceFactory.OverrideForTesting = (_, _, _, _, _) =>
+        {
+            factoryHit = true;
+            return Task.FromResult(Substitute.For<ILetterboxdService>());
+        };
+
+        var ok = await _runner.TryRunForUserAsync(userId, "scheduled",
+            new Progress<double>(), CancellationToken.None);
+
+        Assert.True(ok);
+        Assert.False(factoryHit);
+    }
+
+    [Fact]
+    public async Task TryRunForUserAsync_FilmBelowFailureThreshold_StillRetried()
+    {
+        // One fewer than the threshold: still worth another attempt (could be a transient
+        // Cloudflare/rate-limit error), so the runner must get past the abandon filter.
+        var (user, userId) = MakeUser("lachlan");
+        _userManager.GetUsers().Returns(new[] { user });
+        AddAccount(userId);
+
+        var movie = MakeMovie(1233413);
+        _libraryManager.GetItemList(Arg.Any<InternalItemsQuery>()).Returns(new List<BaseItem> { movie });
+        _userDataManager.GetUserData(user, movie).Returns(
+            new UserItemData { Key = "k", Played = true, LastPlayedDate = DateTime.UtcNow });
+
+        for (var i = 0; i < LetterboxdSyncRunner.MaxConsecutiveSyncFailures - 1; i++)
+            SyncHistory.Record(new SyncEvent
+            {
+                FilmTitle = "Sinners", TmdbId = 1233413, Username = "lachlan",
+                Timestamp = DateTime.UtcNow.AddMinutes(-i), Status = SyncStatus.Failed
+            });
+
+        var factoryHit = false;
+        var service = Substitute.For<ILetterboxdService>();
+        // Throw on lookup so we don't sit through the runner's inter-call delay; we only
+        // care that the film survived the abandon filter and reached authentication.
+        service.LookupFilmByTmdbIdAsync(Arg.Any<int>())
+            .Returns<Task<FilmResult>>(_ => throw new Exception("stop here"));
+        LetterboxdServiceFactory.OverrideForTesting = (_, _, _, _, _) =>
+        {
+            factoryHit = true;
+            return Task.FromResult(service);
+        };
+
+        var ok = await _runner.TryRunForUserAsync(userId, "scheduled",
+            new Progress<double>(), CancellationToken.None);
+
+        Assert.True(ok);
+        Assert.True(factoryHit, "a film below the failure threshold should still be retried");
     }
 
     // ----- SyncGate contention -----
@@ -612,6 +731,11 @@ public class LetterboxdSyncRunnerTests : IDisposable
         var m2 = MakeMovie(550, "Fight Club");
         _libraryManager.GetItemList(Arg.Any<InternalItemsQuery>())
             .Returns(new List<BaseItem> { m1, m2 });
+        // Real watch dates so the no-watch-date suppression doesn't filter them out.
+        _userDataManager.GetUserData(user, m1).Returns(
+            new UserItemData { Key = "k1", Played = true, LastPlayedDate = DateTime.UtcNow });
+        _userDataManager.GetUserData(user, m2).Returns(
+            new UserItemData { Key = "k2", Played = true, LastPlayedDate = DateTime.UtcNow });
 
         var service = Substitute.For<ILetterboxdService>();
         // Throwing on lookup happens before the runner's inter-film delay, keeping this fast.

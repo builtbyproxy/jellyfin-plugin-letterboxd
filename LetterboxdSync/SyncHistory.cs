@@ -249,6 +249,35 @@ public static class SyncHistory
         return latest?.Status;
     }
 
+    /// <summary>
+    /// Number of consecutive Failed events at the tail of this user/film's history
+    /// (most recent first), stopping at the first non-Failed event. The runner uses this
+    /// to abandon a film that fails on every run instead of retrying it indefinitely —
+    /// BuildSyncQueue otherwise pushes previously-failed films to the head of the queue.
+    /// </summary>
+    public static int GetConsecutiveFailureCount(string username, int tmdbId)
+    {
+        lock (_lock)
+        {
+            return GetConsecutiveFailureCount(LoadEvents(), username, tmdbId);
+        }
+    }
+
+    internal static int GetConsecutiveFailureCount(IEnumerable<SyncEvent> events, string username, int tmdbId)
+    {
+        var ordered = events
+            .Where(e => e.TmdbId == tmdbId && string.Equals(e.Username, username, StringComparison.Ordinal))
+            .OrderByDescending(e => e.Timestamp);
+
+        var count = 0;
+        foreach (var e in ordered)
+        {
+            if (e.Status != SyncStatus.Failed) break;
+            count++;
+        }
+        return count;
+    }
+
     internal static bool WasSuccessfullySynced(IEnumerable<SyncEvent> events, string username, int tmdbId, DateTime viewingDate)
     {
         var target = viewingDate.Date;

@@ -229,4 +229,66 @@ public class SyncHistoryLookupTests
 
         Assert.True(SyncHistory.WasImportedFromDiary(events, User, FilmA));
     }
+
+    [Fact]
+    public void GetConsecutiveFailureCount_ZeroOnEmptyHistory()
+    {
+        Assert.Equal(0, SyncHistory.GetConsecutiveFailureCount(new List<SyncEvent>(), User, FilmA));
+    }
+
+    [Fact]
+    public void GetConsecutiveFailureCount_CountsTrailingFailures()
+    {
+        var events = new List<SyncEvent>
+        {
+            Event(User, FilmA, ViewedToday, SyncStatus.Failed, recordedAt: new DateTime(2026, 4, 1)),
+            Event(User, FilmA, ViewedToday, SyncStatus.Failed, recordedAt: new DateTime(2026, 4, 2)),
+            Event(User, FilmA, ViewedToday, SyncStatus.Failed, recordedAt: new DateTime(2026, 4, 3)),
+        };
+
+        Assert.Equal(3, SyncHistory.GetConsecutiveFailureCount(events, User, FilmA));
+    }
+
+    [Fact]
+    public void GetConsecutiveFailureCount_StopsAtMostRecentNonFailure()
+    {
+        // A later success breaks the streak: only failures after it count, and here there
+        // are none, so the film is no longer considered a repeat-failure.
+        var events = new List<SyncEvent>
+        {
+            Event(User, FilmA, ViewedToday, SyncStatus.Failed, recordedAt: new DateTime(2026, 4, 1)),
+            Event(User, FilmA, ViewedToday, SyncStatus.Failed, recordedAt: new DateTime(2026, 4, 2)),
+            Event(User, FilmA, ViewedToday, SyncStatus.Success, recordedAt: new DateTime(2026, 4, 3)),
+        };
+
+        Assert.Equal(0, SyncHistory.GetConsecutiveFailureCount(events, User, FilmA));
+    }
+
+    [Fact]
+    public void GetConsecutiveFailureCount_CountsOnlyFailuresAfterLastSuccess()
+    {
+        // Failures, then a success that resets the streak, then fresh failures: only the
+        // post-success failures count toward abandoning the film.
+        var events = new List<SyncEvent>
+        {
+            Event(User, FilmA, ViewedToday, SyncStatus.Failed, recordedAt: new DateTime(2026, 4, 1)),
+            Event(User, FilmA, ViewedToday, SyncStatus.Success, recordedAt: new DateTime(2026, 4, 2)),
+            Event(User, FilmA, ViewedToday, SyncStatus.Failed, recordedAt: new DateTime(2026, 4, 3)),
+            Event(User, FilmA, ViewedToday, SyncStatus.Failed, recordedAt: new DateTime(2026, 4, 4)),
+        };
+
+        Assert.Equal(2, SyncHistory.GetConsecutiveFailureCount(events, User, FilmA));
+    }
+
+    [Fact]
+    public void GetConsecutiveFailureCount_IgnoresOtherUsersAndFilms()
+    {
+        var events = new List<SyncEvent>
+        {
+            Event(OtherUser, FilmA, ViewedToday, SyncStatus.Failed),
+            Event(User, FilmB, ViewedToday, SyncStatus.Failed),
+        };
+
+        Assert.Equal(0, SyncHistory.GetConsecutiveFailureCount(events, User, FilmA));
+    }
 }
