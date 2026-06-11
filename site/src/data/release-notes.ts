@@ -10,6 +10,16 @@ export type ReleaseNotes = {
 
 export const releaseNotes: ReleaseNotes[] = [
   {
+    version: '1.15.3',
+    headline: 'Maintenance: telemetry design spec',
+    summary: 'No plugin behaviour changes.',
+    highlights: {
+      improvements: [
+        'Adds the OpenSpec change proposal for upcoming anonymous, opt-in usage telemetry: minimal bucketed payload, default off with a one-time prompt, full payload preview in settings, and a fleet canary that auto-detects regressions. Spec only; no telemetry code ships in this release.',
+      ],
+    },
+  },
+  {
     version: '1.15.2',
     headline: 'Maintenance: deterministic test teardown for manual-sync endpoints',
     summary: 'No plugin behaviour changes.',
