@@ -2,8 +2,8 @@
 
 - [x] 1.1 Check worker/ into the repo: wrangler.toml (D1 binding), schema.sql (pings table, partial unique weekly index, latest_per_instance view)
 - [x] 1.2 Implement the ingest Worker: key check, schema_version + shape validation, 2 KB cap, server-computed UTC `week`, weekly counter-merging upsert, error-transition insert with per-instance daily cap (204 on hit), transient per-IP + global rate limits, IP never persisted
-- [ ] 1.3 Provision: create D1 database, apply schema.sql, set INGEST_KEY secret, deploy Worker, fill TelemetryConstants URL/key
-- [ ] 1.4 curl-test the full matrix: valid weekly, duplicate same-week (verify merge), valid transition, capped transition (verify 204), oversized payload, malformed payload, missing/bad key (verify 401)
+- [x] 1.3 Provision: create D1 database, apply schema.sql, set INGEST_KEY secret, deploy Worker, fill TelemetryConstants URL/key
+- [x] 1.4 curl-test the full matrix: valid weekly, duplicate same-week (verify merge), valid transition, capped transition (verify 204), oversized payload, malformed payload, missing/bad key (verify 401)
 - [ ] 1.5 Add TELEMETRY_CF_API_TOKEN + TELEMETRY_CF_ACCOUNT_ID repo secrets; verify a wrangler d1 query returns the curl-test rows
 
 ## 2. Plugin release 1 — the pipe (feat: anonymous opt-in telemetry)
