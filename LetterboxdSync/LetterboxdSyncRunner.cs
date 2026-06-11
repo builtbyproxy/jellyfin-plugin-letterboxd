@@ -285,6 +285,10 @@ public class LetterboxdSyncRunner
         catch (Exception ex)
         {
             _logger.LogError("Auth failed for {Username}: {Message}", user.Username, ex.Message);
+            // Auth failures never reach SyncHistory.Record (we bail before the film loop),
+            // so telemetry needs its own hook here. Classify rather than hardcode auth:
+            // a Cloudflare 403 on /sign-in/ should count as cloudflare, not auth.
+            TelemetryService.RecordError(TelemetryService.Classify(ex.Message));
             SyncProgress.Complete();
             return;
         }

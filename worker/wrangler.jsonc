@@ -1,0 +1,20 @@
+// Telemetry ingest worker + D1 database.
+// Deploy:  npx wrangler deploy            (from this directory)
+// Schema:  npx wrangler d1 execute lbsync-telemetry --remote --file schema.sql
+// Secret:  npx wrangler secret put INGEST_KEY   (the publishable write key baked
+//          into the plugin; extractable by design, junk rows at worst)
+{
+  "name": "lbsync-telemetry",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-06-01",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "lbsync-telemetry",
+      "database_id": "b63431fa-3cc5-4ee0-9d65-93841dd30dcc"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}

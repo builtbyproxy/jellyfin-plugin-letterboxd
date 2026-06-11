@@ -75,6 +75,18 @@
 
                 <!-- DASHBOARD TAB -->
                 <div id="tab-stats" class="lb-tab-content">
+                    <div id="telemetryBanner" style="display:none;background:rgba(0,224,84,0.07);border:1px solid rgba(0,224,84,0.25);border-radius:8px;padding:0.9em 1.1em;margin-bottom:1em;">
+                        <div style="font-weight:600;margin-bottom:0.3em;">Help decide what gets built next</div>
+                        <div class="c-muted" style="font-size:0.88em;line-height:1.45;margin-bottom:0.6em;">
+                            Letterboxd Sync can send one small anonymous ping a week: version numbers, which features you use,
+                            and rough size buckets. Never film titles, usernames, IPs, or exact numbers &mdash; and it stays off
+                            unless you turn it on. <a href="#" id="telemetryBannerPreview" class="lb-link">See exactly what's sent.</a>
+                        </div>
+                        <div style="display:flex;gap:0.6em;">
+                            <button type="button" class="lb-btn lb-btn-primary" id="telemetryBannerEnable">Enable telemetry</button>
+                            <button type="button" class="lb-btn lb-btn-secondary" id="telemetryBannerDismiss">No thanks</button>
+                        </div>
+                    </div>
                     <div style="display:flex;align-items:center;gap:1em;margin-bottom:0.5em;flex-wrap:wrap;">
                         <button type="button" class="lb-btn lb-btn-primary" id="runSyncBtn">Run Sync Now</button>
                         <button type="button" class="lb-btn lb-btn-secondary" id="runWatchlistSyncBtn" title="Pull your Letterboxd watchlist into the Jellyfin playlist (and Jellyseerr if configured)">Sync Watchlist Now</button>
@@ -128,6 +140,20 @@
                         </div>
                     </div>
 
+                    <h3 style="margin-top:1.5em;">Anonymous Telemetry <span class="c-muted" style="font-size:0.7em;">(opt-in, off by default)</span></h3>
+                    <p class="c-muted" style="font-size:0.9em;">One anonymous ping a week: plugin and Jellyfin version, which features are enabled, and bucketed counts. Never film titles, usernames, IPs, or exact numbers. Identified only by a random ID you can regenerate at any time. Full payload is documented in the README.</p>
+                    <div class="lb-account">
+                        <label><input type="checkbox" id="telemetryEnabled" /><span class="lb-check-text">
+                            <span class="lb-check-title">Send anonymous usage telemetry</span>
+                            <span class="lb-check-desc">Helps prioritise what gets built next and catches fleet-wide breakage (like a Letterboxd change) early. An extra ping fires when errors start occurring, capped at one per day.</span>
+                        </span></label>
+                        <div style="display:flex;gap:0.7em;align-items:center;margin-top:0.6em;flex-wrap:wrap;">
+                            <button type="button" class="lb-btn lb-btn-secondary" id="telemetryPreviewBtn">Preview exact JSON</button>
+                            <button type="button" class="lb-btn lb-btn-secondary" id="telemetryRegenBtn">Regenerate ID</button>
+                            <span id="telemetryIdLabel" class="c-muted" style="font-size:0.8em;"></span>
+                        </div>
+                    </div>
+
                     <h3 style="margin-top:1.5em;">User Accounts</h3>
                     <p class="c-muted" style="font-size:0.9em;">Map Jellyfin users to their Letterboxd accounts.</p>
                     <div id="accountsList"></div>
@@ -155,6 +181,26 @@
                         <span id="logsStatus" class="c-muted" style="font-size:0.85em;"></span>
                     </div>
                     <pre id="logsOutput" style="background:#0a0a0a;color:#cfcfcf;padding:1em;border-radius:6px;max-height:60vh;overflow:auto;font-size:0.78em;line-height:1.4;white-space:pre-wrap;word-break:break-word;border:1px solid rgba(255,255,255,0.06);">Loading...</pre>
+                </div>
+
+                <!-- TELEMETRY PREVIEW MODAL -->
+                <div id="telemetryModal" class="lb-modal-overlay">
+                    <div class="lb-modal">
+                        <h3 style="margin-top:0;">Exactly what gets sent</h3>
+                        <pre id="telemetryPayload" style="background:#0a0a0a;color:#cfcfcf;padding:0.8em;border-radius:6px;max-height:45vh;overflow:auto;font-size:0.75em;line-height:1.4;white-space:pre-wrap;word-break:break-word;border:1px solid rgba(255,255,255,0.06);">Loading...</pre>
+                        <p class="c-muted" style="font-size:0.8em;line-height:1.45;">
+                            This doubles as a diagnostic bundle for bug reports. Heads up: it contains your random instance ID,
+                            so pasting it into a public issue links that ID to your past pings. If that bothers you, use
+                            <strong>Copy + regenerate ID</strong> &mdash; future pings get a fresh identity (old rows remain,
+                            unlinked going forward).
+                        </p>
+                        <div style="display:flex;gap:0.6em;flex-wrap:wrap;">
+                            <button type="button" class="lb-btn lb-btn-secondary" id="telemetryCopyBtn">Copy diagnostic bundle</button>
+                            <button type="button" class="lb-btn lb-btn-secondary" id="telemetryCopyRegenBtn">Copy + regenerate ID</button>
+                            <button type="button" class="lb-btn lb-btn-secondary" id="telemetryModalClose">Close</button>
+                            <span id="telemetryModalStatus" class="c-muted" style="font-size:0.85em;align-self:center;"></span>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- REVIEW MODAL -->
@@ -505,6 +551,7 @@
                                         config.Accounts.forEach(function (a) { self.addAccount(a); });
                                     document.getElementById('jellyseerrUrl').value = config.JellyseerrUrl || '';
                                     document.getElementById('jellyseerrApiKey').value = config.JellyseerrApiKey || '';
+                                    self.renderTelemetry(config);
                                 });
                             });
                         },
@@ -515,6 +562,8 @@
                                 config.Accounts = self.collectAccounts();
                                 config.JellyseerrUrl = document.getElementById('jellyseerrUrl').value.trim() || null;
                                 config.JellyseerrApiKey = document.getElementById('jellyseerrApiKey').value.trim() || null;
+                                config.Telemetry = config.Telemetry || {};
+                                config.Telemetry.Enabled = document.getElementById('telemetryEnabled').checked;
                                 ApiClient.updatePluginConfiguration(self.PluginId, config).then(function () {
                                     self.lastConfig = config;
                                     Dashboard.processPluginConfigurationUpdateResult();
@@ -550,6 +599,78 @@
                                     if (data.error) msg = data.error;
                                 } catch (e) {}
                                 statusEl.innerHTML = '<span class="c-red">' + msg + '</span>';
+                            });
+                        },
+
+                        renderTelemetry: function (config) {
+                            var t = (config && config.Telemetry) || {};
+                            document.getElementById('telemetryEnabled').checked = t.Enabled === true;
+                            document.getElementById('telemetryIdLabel').textContent =
+                                t.InstanceId ? ('Instance ID: ' + t.InstanceId) : 'No instance ID yet (generated when you enable)';
+                            var showBanner = t.Enabled !== true && t.BannerDismissed !== true;
+                            document.getElementById('telemetryBanner').style.display = showBanner ? '' : 'none';
+                        },
+
+                        // Banner actions save immediately: Enable opts in (the server generates
+                        // the random instance ID on save), No-thanks just dismisses. Either way
+                        // the banner never shows again.
+                        telemetryBannerChoice: function (enable) {
+                            var self = this;
+                            ApiClient.getPluginConfiguration(self.PluginId).then(function (config) {
+                                config.Telemetry = config.Telemetry || {};
+                                config.Telemetry.Enabled = enable;
+                                config.Telemetry.BannerDismissed = true;
+                                ApiClient.updatePluginConfiguration(self.PluginId, config).then(function () {
+                                    Dashboard.processPluginConfigurationUpdateResult();
+                                    self.loadSettings();
+                                });
+                            });
+                        },
+
+                        openTelemetryPreview: function () {
+                            document.getElementById('telemetryModalStatus').textContent = '';
+                            document.getElementById('telemetryPayload').textContent = 'Loading...';
+                            document.getElementById('telemetryModal').style.display = 'block';
+                            ApiClient.ajax({
+                                url: ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/Telemetry/Preview'),
+                                type: 'GET', dataType: 'text'
+                            }).then(function (text) {
+                                try { text = JSON.stringify(JSON.parse(text), null, 2); } catch (e) {}
+                                document.getElementById('telemetryPayload').textContent = text;
+                            }, function () {
+                                document.getElementById('telemetryPayload').textContent = 'Failed to load preview (admin access required).';
+                            });
+                        },
+
+                        copyTelemetryBundle: function (regenerateAfter) {
+                            var self = this;
+                            var text = document.getElementById('telemetryPayload').textContent;
+                            var statusEl = document.getElementById('telemetryModalStatus');
+                            navigator.clipboard.writeText(text).then(function () {
+                                statusEl.textContent = 'Copied.';
+                                if (regenerateAfter) self.regenerateTelemetryId(true);
+                            }, function () {
+                                statusEl.textContent = 'Copy failed - select the text manually.';
+                            });
+                        },
+
+                        regenerateTelemetryId: function (afterCopy) {
+                            var self = this;
+                            ApiClient.getPluginConfiguration(self.PluginId).then(function (config) {
+                                config.Telemetry = config.Telemetry || {};
+                                config.Telemetry.InstanceId = (window.crypto && crypto.randomUUID)
+                                    ? crypto.randomUUID()
+                                    : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+                                        var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+                                        return v.toString(16);
+                                    });
+                                ApiClient.updatePluginConfiguration(self.PluginId, config).then(function () {
+                                    Dashboard.processPluginConfigurationUpdateResult();
+                                    document.getElementById('telemetryModalStatus').textContent = afterCopy
+                                        ? 'Copied. New instance ID generated - future pings are unlinked.'
+                                        : 'New instance ID generated - future pings are unlinked.';
+                                    self.loadSettings();
+                                });
                             });
                         },
 
@@ -858,6 +979,14 @@
                             document.getElementById('historyPrev').addEventListener('click', function () { self.gotoHistoryPage(Math.floor(self.historyOffset / self.historyPageSize)); });
                             document.getElementById('historyNext').addEventListener('click', function () { self.gotoHistoryPage(Math.floor(self.historyOffset / self.historyPageSize) + 2); });
                             document.getElementById('historyLast').addEventListener('click', function () { self.gotoHistoryPage(Math.ceil(self.historyTotal / self.historyPageSize)); });
+                            document.getElementById('telemetryBannerEnable').addEventListener('click', function () { self.telemetryBannerChoice(true); });
+                            document.getElementById('telemetryBannerDismiss').addEventListener('click', function () { self.telemetryBannerChoice(false); });
+                            document.getElementById('telemetryBannerPreview').addEventListener('click', function (e) { e.preventDefault(); self.openTelemetryPreview(); });
+                            document.getElementById('telemetryPreviewBtn').addEventListener('click', function () { self.openTelemetryPreview(); });
+                            document.getElementById('telemetryRegenBtn').addEventListener('click', function () { self.regenerateTelemetryId(false); });
+                            document.getElementById('telemetryCopyBtn').addEventListener('click', function () { self.copyTelemetryBundle(false); });
+                            document.getElementById('telemetryCopyRegenBtn').addEventListener('click', function () { self.copyTelemetryBundle(true); });
+                            document.getElementById('telemetryModalClose').addEventListener('click', function () { document.getElementById('telemetryModal').style.display = 'none'; });
                             document.getElementById('reviewCancel').addEventListener('click', function () { document.getElementById('reviewModal').style.display = 'none'; });
                             document.getElementById('reviewSubmit').addEventListener('click', function () { self.submitReview(); });
                             document.getElementById('reviewRewatch').addEventListener('change', function () {

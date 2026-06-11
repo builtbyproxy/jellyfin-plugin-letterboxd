@@ -17,4 +17,10 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Jellyseerr API key (Settings → General → API Key in Jellyseerr).
     /// </summary>
     public string? JellyseerrApiKey { get; set; }
+
+    /// <summary>
+    /// Anonymous opt-in usage telemetry state. Off by default; nothing is ever sent
+    /// while disabled. See <see cref="TelemetryData"/> for what persists and why.
+    /// </summary>
+    public TelemetryData Telemetry { get; set; } = new();
 }

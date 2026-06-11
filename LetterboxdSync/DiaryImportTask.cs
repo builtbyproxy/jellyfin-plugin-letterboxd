@@ -81,6 +81,7 @@ public class DiaryImportTask : IScheduledTask
                 {
                     _logger.LogError("Auth failed for {Username} as {LbUser}: {Message}",
                         user.Username, account.LetterboxdUsername, ex.Message);
+                    TelemetryService.RecordError(TelemetryService.Classify(ex.Message));
                     continue;
                 }
 
@@ -98,6 +99,7 @@ public class DiaryImportTask : IScheduledTask
                 {
                     _logger.LogError("Failed to fetch diary for {Username} as {LbUser}: {Message}",
                         user.Username, account.LetterboxdUsername, ex.Message);
+                    TelemetryService.RecordError(TelemetryService.Classify(ex.Message));
                     continue;
                 }
 

@@ -177,6 +177,35 @@ public class LetterboxdController : ControllerBase
         return Accepted(new { started = true });
     }
 
+    /// <summary>
+    /// Returns the exact JSON the next telemetry ping would send. Admin-only: the payload
+    /// contains the instance UUID plus a configuration fingerprint, the same policy as
+    /// the config page that displays it. Backs the settings "Preview exact JSON" modal,
+    /// which doubles as a copy-diagnostic-bundle for bug reports.
+    /// </summary>
+    [HttpGet("Telemetry/Preview")]
+    [Authorize(Policy = "RequiresElevation")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public ActionResult GetTelemetryPreview()
+    {
+        int? libraryCount;
+        try
+        {
+            libraryCount = _libraryManager.GetItemList(new InternalItemsQuery
+            {
+                IncludeItemTypes = new[] { BaseItemKind.Movie },
+                Recursive = true
+            }).Count;
+        }
+        catch
+        {
+            libraryCount = null;
+        }
+
+        var json = TelemetryService.BuildPayload("weekly", libraryCount);
+        return Content(json, "application/json");
+    }
+
     [HttpGet("Stats")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public ActionResult GetStats()

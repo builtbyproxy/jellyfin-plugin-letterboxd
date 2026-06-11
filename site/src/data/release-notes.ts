@@ -10,6 +10,17 @@ export type ReleaseNotes = {
 
 export const releaseNotes: ReleaseNotes[] = [
   {
+    version: '1.16.0',
+    headline: 'Anonymous opt-in telemetry',
+    summary:
+      'Entirely opt-in and off by default. If you enable it, one small anonymous ping a week tells the project which features are actually used, so roadmap decisions stop being guesses. Nothing else in the plugin changes.',
+    highlights: {
+      new: [
+        'Anonymous usage telemetry, opt-in via a one-time dashboard banner or the Settings checkbox. The payload is minimal and bucketed: version numbers, which features are enabled, and rough size buckets. Never film titles, usernames, IPs, or exact numbers. A "Preview exact JSON" button in Settings shows precisely what would be sent, and the full payload is documented in the README.',
+        'Identified only by a random instance ID generated when you opt in, with a one-click Regenerate button that unlinks future pings. The preview doubles as a diagnostic bundle for bug reports, with an honest warning about what pasting it publicly reveals.',
+        'An extra anonymous ping fires when sync errors start occurring (capped at one per day), powering an automated canary that compares error rates across releases and catches fleet-wide breakage, like a Letterboxd endpoint change, before bug reports arrive.',
+      ],
+    },
     version: '1.15.4',
     headline: 'Required update for Jellyfin 10.11.9 and 10.11.10 servers',
     summary:

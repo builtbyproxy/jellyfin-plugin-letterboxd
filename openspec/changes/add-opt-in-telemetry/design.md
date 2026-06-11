@@ -2,9 +2,11 @@
 
 Source: office-hours design doc `~/.gstack/projects/builtbyproxy-jellyfin-plugin-letterboxd/lachlan-main-design-20260611-144403.md` (3 rounds of adversarial review, 35 findings fixed). This file records the decisions; the spec deltas record the requirements.
 
-## Decision 1: Supabase over Plausible or Cloudflare D1
+## Decision 1: Cloudflare Workers + D1 (REVISED 2026-06-11; originally Supabase)
 
-The load-bearing requirement is that the maintainer's AI tooling can query the data over SQL (existing Supabase MCP connection) so analysis ends in issues/PRs without manual export. Plausible's aggregate event model cannot do per-instance longitudinal queries ("active installs by version over time") and its Stats API is not SQL. D1 adds a new platform for no gain. Supabase free tier with one table and one edge function wins.
+The load-bearing requirement is that the maintainer's AI tooling can query the data over SQL so analysis ends in issues/PRs without manual export. Plausible's aggregate event model cannot do per-instance longitudinal queries and its Stats API is not SQL.
+
+Originally chosen: Supabase free tier (existing MCP connection). Abandoned during provisioning: the free tier's 2-active-project limit was full, and upgrading to Pro priced out at ~US$45/month all-in (Pro base + per-project compute for the existing projects) — absurd for a few thousand rows. Cloudflare Workers + D1 replaces it: one free platform hosts both the ingest logic and the database, the free tier (100k requests/day, 5 GB) is orders of magnitude beyond this workload, D1 never pauses on idle (deleting the DB keep-alive machinery from the design entirely), and querying happens via wrangler/the D1 HTTP API with a scoped token.
 
 ## Decision 2: Opt-in, default off, one-time prompt
 
@@ -30,9 +32,9 @@ Self-hosters restart containers constantly. Window counters (measured since the 
 
 `week` is computed in the edge function from UTC arrival time (a Postgres generated column over `timestamptz` is non-immutable and fails). Weekly pings upsert on `(instance_id, week)`; the client gates sending until the server week has rolled over since its persisted last-ping timestamp, so ±6 h jitter can never produce two different payloads in the same week slot; `ON CONFLICT` merges counters as a backstop.
 
-## Decision 8: Key and abuse model
+## Decision 8: Key and abuse model (REVISED for D1)
 
-The plugin ships only the anon key. RLS is deny-all on `pings`; `/ingest` is the sole write path and uses its internal service role after validating. The anon key is extractable by design — junk rows are the worst case, bounded by shape validation, a 2 KB payload cap, per-instance caps, a transient (never persisted) per-IP rate limit plus a global requests-per-minute cap, and a row-growth alarm in the daily canary query.
+The plugin ships a publishable static ingest key checked by the Worker (stops drive-by scanner POSTs). The D1 database has no client-facing access path at all — only the Worker and scoped API tokens can touch it, which is what RLS provided in the Supabase design. The key is extractable by design — junk rows are the worst case, bounded by shape validation, a 2 KB payload cap, per-instance caps, a transient (never persisted) per-IP rate limit plus a global requests-per-minute cap, and a row-growth alarm in the daily canary query.
 
 ## Decision 9: Canary statistics under an every-merge release cadence
 
@@ -42,9 +44,9 @@ Single versions never accumulate useful cohorts when every merge ships. So: fore
 
 The canary workflow is plain SQL + thresholds — no AI in the loop, so its issues are reproducible and arguable. Deep analysis (feature adoption, scale, roadmap questions) happens in normal AI sessions over the Supabase MCP, and findings become issues/PRs through human review.
 
-## Decision 11: Free-tier keep-alive that can't die quietly
+## Decision 11: No DB keep-alive needed (REVISED for D1)
 
-Supabase free tier pauses after ~7 days of inactivity and does not auto-resume. `telemetry-keepalive.yml` runs daily (one SELECT). GitHub disables cron workflows after 60 days without repo activity, so the job commits a heartbeat timestamp to a dedicated non-main branch (`telemetry-heartbeat`) when repo activity is older than 50 days — never to main, where the release pipeline would cut a junk release or go red. Any keep-alive or canary run that cannot reach the database fails the workflow loudly.
+D1 never pauses on idle, so the dedicated keep-alive workflow was deleted. The two parts of it that still mattered moved into the canary workflow: the GitHub 60-day cron auto-disable heartbeat (commits to the non-main `telemetry-heartbeat` branch when repo activity is older than 50 days) and the loud-failure contract (any canary run that cannot reach the database fails red).
 
 ## Deferred
 

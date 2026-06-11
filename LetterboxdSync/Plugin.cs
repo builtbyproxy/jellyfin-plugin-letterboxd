@@ -34,6 +34,16 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         if (configuration is PluginConfiguration cfg)
         {
             cfg.NormalisePrimaryFlags();
+
+            // Telemetry identity is generated server-side at the moment of opt-in, so
+            // every UI path (banner, checkbox, raw API) gets the same guarantee: random
+            // UUID, never derived from anything, plus a per-instance jitter slot.
+            cfg.Telemetry ??= new TelemetryData();
+            if (cfg.Telemetry.Enabled && string.IsNullOrEmpty(cfg.Telemetry.InstanceId))
+            {
+                cfg.Telemetry.InstanceId = Guid.NewGuid().ToString();
+                cfg.Telemetry.JitterMinutes = Random.Shared.Next(0, 720);
+            }
         }
         base.UpdateConfiguration(configuration);
     }

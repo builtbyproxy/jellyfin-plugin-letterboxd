@@ -188,6 +188,8 @@ public class WatchlistSyncRunner
         catch (Exception ex)
         {
             _logger.LogError("Auth failed for {Username}: {Message}", user.Username, ex.Message);
+            // No SyncEvent is recorded on this early-exit path; hook telemetry directly.
+            TelemetryService.RecordError(TelemetryService.Classify(ex.Message));
             return;
         }
 
@@ -204,6 +206,7 @@ public class WatchlistSyncRunner
         catch (Exception ex)
         {
             _logger.LogError("Failed to fetch watchlist for {Username}: {Message}", user.Username, ex.Message);
+            TelemetryService.RecordError(TelemetryService.Classify(ex.Message));
             return;
         }
 
@@ -319,6 +322,11 @@ public class WatchlistSyncRunner
                 "Jellyseerr auto-request for {Username} ({Mode}): {Requested} new, {Existing} already on Jellyseerr, {Failed} failed of {Total} considered",
                 user.Username, account.BackfillAvailableRequests ? "backfill" : "unmatched-only",
                 requested, alreadyExists, failed, requestIds.Count);
+
+            // Jellyseerr failures surface as return values, not SyncEvents; count the
+            // batch once (not per film) so one outage doesn't inflate the error counter.
+            if (failed > 0)
+                TelemetryService.RecordError(TelemetryService.CatJellyseerr);
         }
     }
 
