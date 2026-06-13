@@ -18,7 +18,7 @@
 - [x] 3.1 OpenSpec change `add-send-logs`
 - [x] 3.2 Bump to 1.17.0.0; release-notes.ts entry
 - [x] 3.3 Build, sideload to the maintainer's server, click send, verify bundle lands in D1 with a ref code
-- [ ] 3.4 Open PR; remove the disabled public-repo canary file in the same release (housekeeping)
+- [x] 3.4 Open PR; remove the disabled public-repo canary file in the same release (housekeeping)
 
 ## 4. Deferred (follow-up change)
 
