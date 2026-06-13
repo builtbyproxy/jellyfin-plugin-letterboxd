@@ -80,10 +80,14 @@ public class SendLogsTests : IDisposable
         Assert.Null(code);
     }
 
-    [Fact]
-    public void SendLogs_RequiresElevation()
+    [Theory]
+    [InlineData("SendLogs")]
+    [InlineData("PreviewLogs")]
+    [InlineData("GetLogs")]          // raw server logs name every user's Letterboxd account + films
+    [InlineData("GetTelemetryPreview")]
+    public void SensitiveEndpoints_RequireElevation(string methodName)
     {
-        var method = typeof(LetterboxdController).GetMethod("SendLogs", BindingFlags.Public | BindingFlags.Instance);
+        var method = typeof(LetterboxdController).GetMethod(methodName, BindingFlags.Public | BindingFlags.Instance);
         Assert.NotNull(method);
         var attr = method!.GetCustomAttribute<AuthorizeAttribute>();
         Assert.NotNull(attr);

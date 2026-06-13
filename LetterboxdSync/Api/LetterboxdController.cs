@@ -605,6 +605,7 @@ public class LetterboxdController : ControllerBase
     /// logs auth tokens, passwords, or cookies, so this output is safe to share.
     /// </summary>
     [HttpGet("Logs")]
+    [Authorize(Policy = "RequiresElevation")] // raw server logs name every user's Letterboxd account + watched films; admin-only
     [ProducesResponseType(StatusCodes.Status200OK)]
     public ActionResult GetLogs([FromQuery] int maxLines = 500)
     {
