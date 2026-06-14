@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.17.0.0",
+        "changelog": "**Send your logs to the developer in one click.** Reporting a problem with Letterboxd Sync used to mean digging through Jellyfin's log files and pasting the right lines into a GitHub issue. This release adds a **\"Send logs to developer\"** button to the Logs tab that does it for you.\n\n**What it does**\n- Click the button and the plugin bundles your recent Letterboxd Sync log lines (the same ones already shown on the Logs tab) and uploads them privately, then hands you a short **reference code** like `LBX-7Q2F9K`. Quote that code when you open a GitHub issue and the developer can pull your exact logs, no more copy-pasting walls of text.\n- A confirmation step lets you **preview exactly what will be sent** (the real log lines and a telemetry snapshot, byte-for-byte what gets uploaded) and add a short note describing what went wrong.\n\n**Privacy, stated plainly**\n- Unlike the anonymous weekly telemetry from 1.16.0, **logs are not anonymous**: they can contain your Letterboxd username or film titles, and the bundle is linked to your install's telemetry ID. The dialog says this before you send, nothing leaves your server until you confirm, and passwords, cookies, and auth tokens are never logged.\n- Works whether or not you have anonymous telemetry enabled. Uploaded bundles are stored privately and **auto-deleted after 90 days**.\n\n**Also in this release**\n- **Stronger log access control:** the plugin's log endpoint now requires administrator access. Previously any signed-in Jellyfin user could read the Letterboxd Sync logs (which name every linked Letterboxd account and watched film); on shared or family servers this is now admin-only.\n- Better diagnostics when you do send logs: full multi-line error traces are captured intact (they were previously fragmented), log text is cleaned of stray terminal control codes, and the bundle always records your Jellyfin version.\n\nNothing changes unless you choose to use the new button.",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/releases/download/v1.17.0/jellyfin-plugin-letterboxd-v1.17.0.zip",
+        "checksum": "40acc5add83bd50364973407aae6bfd0",
+        "timestamp": "2026-06-14T00:02:57Z"
+      },
+      {
         "version": "1.16.0.0",
         "changelog": "New: anonymous, opt-in usage telemetry — off by default, enabled via a one-time dashboard banner or Settings. One small bucketed ping a week (versions, enabled features, size buckets; never film titles, usernames, IPs, or exact numbers), a Preview-exact-JSON button showing precisely what's sent, a regenerable random instance ID, and an extra capped ping when errors start occurring so fleet-wide breakage is caught early. Full payload documented in the README. No other behaviour changes.",
         "targetAbi": "10.11.9.0",
