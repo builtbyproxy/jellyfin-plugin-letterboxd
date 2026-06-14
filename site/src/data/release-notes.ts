@@ -10,6 +10,26 @@ export type ReleaseNotes = {
 
 export const releaseNotes: ReleaseNotes[] = [
   {
+    version: '1.17.0',
+    headline: 'Send your logs to the developer in one click',
+    summary:
+      'Reporting a problem used to mean digging through Jellyfin log files and pasting the right lines into a GitHub issue. Now there is a "Send logs to developer" button on the Logs tab: it packages your recent Letterboxd Sync activity, uploads it privately, and hands you a short reference code to quote in your bug report. It is opt-in every single time you use it, shows you exactly what will be sent before anything leaves your server, and is upfront that logs, unlike the anonymous telemetry, can identify you. This release also tightens who on your server is allowed to read those logs.',
+    highlights: {
+      new: [
+        'Send logs to developer: open Dashboard, then Letterboxd Sync, then the Logs tab, and click "Send logs to developer". The plugin bundles the recent Letterboxd Sync log lines (the same ones already shown on that tab) and uploads them, then gives you a short reference code like LBX-7Q2F9K. Quote that code when you open a GitHub issue and the developer can pull your exact logs to diagnose the problem, no more copy-pasting walls of text.',
+        'See exactly what is sent, before it is sent. The confirmation step has a "Preview exactly what is sent" view that renders the real log lines and the telemetry snapshot, byte for byte what gets uploaded. You can also add a short note describing what went wrong, which is often the single most useful thing for diagnosis.',
+        'Honest about privacy. Unlike the anonymous weekly telemetry, logs are NOT anonymous: they can contain a Letterboxd username or film titles, and the bundle is linked to the telemetry ID for that install. The dialog says this plainly, nothing is sent until you confirm, passwords and cookies and auth tokens are never logged, and it works whether or not anonymous telemetry is turned on.',
+        'Your logs are not kept forever. Uploaded bundles are stored privately and automatically deleted after 90 days.',
+      ],
+      improvements: [
+        'Stronger log access control. The plugin log endpoint now requires administrator access. Previously any signed-in Jellyfin user on the server could read the Letterboxd Sync logs, which name every linked Letterboxd account and watched film. On shared or family servers this is now admin-only.',
+        'Better diagnostics when you do send logs: full multi-line error traces are now captured intact (they were previously cut into fragments), log text is cleaned of stray terminal control codes, and the bundle always records your Jellyfin version.',
+      ],
+    },
+    upgradeNotes:
+      'Nothing changes unless you choose to use the new button. To send logs, go to Dashboard, then Letterboxd Sync, then the Logs tab, and click "Send logs to developer" (admin only). Anonymous telemetry, if you enabled it in 1.16.0, is unaffected.',
+  },
+  {
     version: '1.16.0',
     headline: 'Anonymous opt-in telemetry',
     summary:
@@ -21,6 +41,8 @@ export const releaseNotes: ReleaseNotes[] = [
         'An extra anonymous ping fires when sync errors start occurring (capped at one per day), powering an automated canary that compares error rates across releases and catches fleet-wide breakage, like a Letterboxd endpoint change, before bug reports arrive.',
       ],
     },
+  },
+  {
     version: '1.15.4',
     headline: 'Required update for Jellyfin 10.11.9 and 10.11.10 servers',
     summary:

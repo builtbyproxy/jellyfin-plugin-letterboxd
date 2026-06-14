@@ -729,10 +729,10 @@ public class LetterboxdControllerTests
         using var h = new ControllerTestHarness();
         var logFile = System.IO.Path.Combine(h.LogDir, "log_20260505.log");
         System.IO.File.WriteAllText(logFile,
-            "[INF] Some unrelated line\n" +
-            "[INF] LetterboxdSync.Foo: relevant 1\n" +
-            "[INF] Another unrelated\n" +
-            "[INF] LetterboxdSync.Bar: relevant 2\n");
+            "[2026-05-05 10:00:00.000 +00:00] [INF] [1] Some.Other: unrelated line\n" +
+            "[2026-05-05 10:00:01.000 +00:00] [INF] [1] LetterboxdSync.Foo: relevant 1\n" +
+            "[2026-05-05 10:00:02.000 +00:00] [INF] [1] Another.Thing: unrelated\n" +
+            "[2026-05-05 10:00:03.000 +00:00] [INF] [1] LetterboxdSync.Bar: relevant 2\n");
 
         var result = h.Controller.GetLogs();
 
@@ -744,12 +744,54 @@ public class LetterboxdControllerTests
     }
 
     [Fact]
+    public void GetLogs_CapturesMultiLineExceptionContinuations()
+    {
+        using var h = new ControllerTestHarness();
+        var logFile = System.IO.Path.Combine(h.LogDir, "log_20260505.log");
+        // A real multi-line error: the header carries the tag; the exception message
+        // and stack frames continue on lines that do NOT carry it.
+        System.IO.File.WriteAllText(logFile,
+            "[2026-05-05 10:00:00.000 +00:00] [ERR] [1] LetterboxdSync.PlaybackHandler: sync failed\n" +
+            "System.Exception: something broke\n" +
+            "   at LetterboxdSync.PlaybackHandler.Do()\n" +
+            "   at System.Threading.Tasks.Task.Run()\n" +
+            "[2026-05-05 10:00:01.000 +00:00] [INF] [1] Other.Thing: unrelated, must NOT be captured\n");
+
+        var result = h.Controller.GetLogs();
+        var lines = Prop<System.Collections.Generic.List<string>>(result, "lines");
+
+        Assert.NotNull(lines);
+        // Header + 3 continuation lines, and nothing from the unrelated entry after it.
+        Assert.Equal(4, lines!.Count);
+        Assert.Contains(lines, l => l.Contains("System.Exception: something broke"));
+        Assert.Contains(lines, l => l.Contains("at LetterboxdSync.PlaybackHandler.Do()"));
+        Assert.DoesNotContain(lines, l => l.Contains("must NOT be captured"));
+    }
+
+    [Fact]
+    public void GetLogs_NegativeMaxLines_DoesNotThrow()
+    {
+        using var h = new ControllerTestHarness();
+        var logFile = System.IO.Path.Combine(h.LogDir, "log_20260505.log");
+        System.IO.File.WriteAllText(logFile,
+            "[2026-05-05 10:00:00.000 +00:00] [INF] [1] LetterboxdSync.Foo: a\n" +
+            "[2026-05-05 10:00:01.000 +00:00] [INF] [1] LetterboxdSync.Foo: b\n");
+
+        // Negative maxLines must clamp, not crash with ArgumentOutOfRangeException.
+        var result = h.Controller.GetLogs(maxLines: -1);
+        Assert.IsType<OkObjectResult>(result);
+        var lines = Prop<System.Collections.Generic.List<string>>(result, "lines");
+        Assert.NotNull(lines);
+        Assert.NotEmpty(lines!);
+    }
+
+    [Fact]
     public void GetLogs_RespectsMaxLinesCap()
     {
         using var h = new ControllerTestHarness();
         var logFile = System.IO.Path.Combine(h.LogDir, "log_20260505.log");
         var lines = string.Join("\n",
-            Enumerable.Range(0, 100).Select(i => $"[INF] LetterboxdSync.X: line {i}"));
+            Enumerable.Range(0, 100).Select(i => $"[2026-05-05 10:00:{i % 60:D2}.000 +00:00] [INF] [1] LetterboxdSync.X: line {i}"));
         System.IO.File.WriteAllText(logFile, lines);
 
         var result = h.Controller.GetLogs(maxLines: 10);

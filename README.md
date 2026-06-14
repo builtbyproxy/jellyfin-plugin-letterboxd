@@ -147,6 +147,12 @@ The precise promise, worded carefully:
 
 What it's for: deciding what gets built next based on what people actually use, and an automated canary that compares error rates across releases and files regression issues before bug reports arrive.
 
+### Send logs to the developer
+
+When something goes wrong, the **Logs** tab has a **Send logs to developer** button. It packages the recent Letterboxd Sync log lines shown on that tab (passwords, cookies, and auth tokens are never logged) plus an anonymous telemetry snapshot, uploads them privately, and gives you a short **reference code** (e.g. `LBX-7Q2F9K`) to quote if you open a bug report.
+
+Unlike the anonymous telemetry above, **logs are not anonymous** — they can contain your Letterboxd username or film titles, and the bundle is linked to your telemetry instance ID. So it is strictly opt-in per use: a confirmation step spells this out, lets you add a note describing the problem, and offers a preview of exactly what is sent before anything leaves your server. Works whether or not telemetry is enabled. Uploaded bundles are stored privately and auto-deleted after 90 days.
+
 ## Requirements
 
 - Jellyfin 10.11+

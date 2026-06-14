@@ -26,6 +26,23 @@ CREATE UNIQUE INDEX IF NOT EXISTS pings_weekly_instance_week
 CREATE INDEX IF NOT EXISTS pings_instance_received ON pings (instance_id, received_at DESC);
 CREATE INDEX IF NOT EXISTS pings_type_received ON pings (ping_type, received_at DESC);
 
+-- User-initiated diagnostic bundles (sent via the plugin's "Send logs to developer"
+-- button). NOT anonymous, unlike pings: may contain the user's Letterboxd username
+-- or film titles, sent only on an explicit disclosed click. Keyed by a quotable ref
+-- code; pruned after 90 days by the Worker's scheduled() handler.
+CREATE TABLE IF NOT EXISTS log_bundles (
+    ref_code TEXT PRIMARY KEY,
+    received_at TEXT NOT NULL,
+    instance_id TEXT NOT NULL,
+    plugin_version TEXT NOT NULL,
+    jellyfin_version TEXT NOT NULL,
+    telemetry TEXT,
+    note TEXT,
+    log_lines TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS log_bundles_received ON log_bundles (received_at DESC);
+CREATE INDEX IF NOT EXISTS log_bundles_instance ON log_bundles (instance_id);
+
 -- Active installs by version: latest weekly ping per instance.
 CREATE VIEW IF NOT EXISTS latest_per_instance AS
 SELECT p.instance_id, p.received_at, p.week, p.plugin_version, p.jellyfin_version,

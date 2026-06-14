@@ -605,56 +605,164 @@ public class LetterboxdController : ControllerBase
     /// logs auth tokens, passwords, or cookies, so this output is safe to share.
     /// </summary>
     [HttpGet("Logs")]
+    [Authorize(Policy = "RequiresElevation")] // raw server logs name every user's Letterboxd account + watched films; admin-only
     [ProducesResponseType(StatusCodes.Status200OK)]
     public ActionResult GetLogs([FromQuery] int maxLines = 500)
+    {
+        var cap = Math.Min(Math.Max(maxLines, 1), 5000);
+        var (all, source, error) = ReadRecentLogLines();
+        if (error != null)
+            return Ok(new { lines = Array.Empty<string>(), source = (string?)null, error });
+
+        var trimmed = all.Count > cap ? all.GetRange(all.Count - cap, cap) : all;
+        return Ok(new { lines = trimmed, totalMatches = all.Count, returned = trimmed.Count, source });
+    }
+
+    // Matches a Jellyfin log-entry header start: "[2026-06-14 ...". Continuation lines
+    // (stack frames, exception messages) do not begin this way.
+    private static readonly System.Text.RegularExpressions.Regex _logHeader =
+        new(@"^\[\d{4}-\d{2}-\d{2}", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    // ANSI CSI escape sequences (colour codes) that some console sinks emit.
+    private static readonly System.Text.RegularExpressions.Regex _ansi =
+        new(@"\x1B\[[0-9;]*[A-Za-z]", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private static bool IsLogHeader(string line) => _logHeader.IsMatch(line);
+
+    private static string StripAnsi(string line) => _ansi.Replace(line, string.Empty);
+
+    /// <summary>
+    /// Reads ALL recent LetterboxdSync-tagged lines from Jellyfin's two newest main
+    /// log files (covering a just-rolled-over file), untrimmed. Shared by the Logs tab
+    /// and the "Send logs to developer" bundle; each caller caps as it sees fit. The
+    /// plugin never logs auth tokens, passwords, cookies, or review text, so these
+    /// lines are safe to share.
+    /// </summary>
+    private (List<string> Lines, string? Source, string? Error) ReadRecentLogLines()
     {
         try
         {
             var logDir = _appPaths.LogDirectoryPath;
             if (!Directory.Exists(logDir))
-                return Ok(new { lines = Array.Empty<string>(), source = (string?)null, error = "log directory not found" });
+                return (new List<string>(), null, "log directory not found");
 
-            // Look at the two most recent main log files. Cover the case where the
-            // current file just rolled over and recent activity is in the previous one.
             var mainLogs = Directory.GetFiles(logDir, "log_*.log")
                 .OrderByDescending(f => f)
                 .Take(2)
                 .ToList();
-
             if (mainLogs.Count == 0)
-                return Ok(new { lines = Array.Empty<string>(), source = (string?)null, error = "no log files" });
+                return (new List<string>(), null, "no log files");
 
             var lines = new List<string>();
             foreach (var path in mainLogs.AsEnumerable().Reverse())
             {
+                // Force UTF-8 so non-ASCII (accented/CJK film titles) round-trips cleanly.
                 using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                using var sr = new StreamReader(fs);
+                using var sr = new StreamReader(fs, System.Text.Encoding.UTF8);
                 string? line;
+                // A matched LetterboxdSync entry is often multi-line: the header line carries
+                // the tag, but the exception message and "   at ..." stack frames continue on
+                // following lines that DON'T carry the tag. Capture those continuation lines
+                // too (until the next timestamped header) or the most useful diagnostic, the
+                // stack trace, gets shredded by a per-line filter.
+                var inMatch = false;
                 while ((line = sr.ReadLine()) != null)
                 {
-                    if (line.Contains("LetterboxdSync", StringComparison.Ordinal) ||
-                        line.Contains("Letterboxd ", StringComparison.Ordinal))
+                    line = StripAnsi(line);
+                    var isHeader = IsLogHeader(line);
+                    if (isHeader)
                     {
-                        lines.Add(line);
+                        inMatch = line.Contains("LetterboxdSync", StringComparison.Ordinal) ||
+                                  line.Contains("Letterboxd ", StringComparison.Ordinal);
+                        if (inMatch) lines.Add(line);
+                    }
+                    else if (inMatch)
+                    {
+                        lines.Add(line); // continuation of a matched entry (stack frame / message)
                     }
                 }
             }
 
-            // Cap to last N lines so the response stays small.
-            var trimmed = lines.Count > maxLines ? lines.GetRange(lines.Count - maxLines, maxLines) : lines;
-            return Ok(new
-            {
-                lines = trimmed,
-                totalMatches = lines.Count,
-                returned = trimmed.Count,
-                source = string.Join(", ", mainLogs.Select(Path.GetFileName))
-            });
+            return (lines, string.Join(", ", mainLogs.Select(Path.GetFileName)), null);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning("GetLogs failed: {Message}", ex.Message);
-            return Ok(new { lines = Array.Empty<string>(), source = (string?)null, error = ex.Message });
+            _logger.LogWarning("ReadRecentLogLines failed: {Message}", ex.Message);
+            return (new List<string>(), null, ex.Message);
         }
+    }
+
+    /// <summary>
+    /// User-initiated "send logs to developer". Builds a diagnostic bundle (recent
+    /// sanitized log lines + the current telemetry snapshot + versions) and uploads
+    /// it to the private telemetry backend, returning a short reference code the user
+    /// can quote in a bug report. Admin-only. Unlike telemetry this is NOT anonymous
+    /// (logs may contain a Letterboxd username or film titles) and only runs on this
+    /// explicit, disclosed action. Works whether or not telemetry is enabled; if no
+    /// telemetry instance id exists, a one-off id is generated for the bundle.
+    /// </summary>
+    /// <summary>
+    /// Assembles the exact diagnostic bundle JSON for the calling server. Used by both
+    /// the preview and the send so they cannot diverge: what the preview shows is byte
+    /// for byte what the send uploads (note aside, which the user types in either path).
+    /// </summary>
+    private string BuildLogBundleJson(string? note)
+    {
+        var (allLines, _, _) = ReadRecentLogLines();
+        var lines = allLines.Count > 500 ? allLines.GetRange(allLines.Count - 500, 500) : allLines;
+
+        int? libraryCount;
+        try
+        {
+            libraryCount = _libraryManager.GetItemList(new InternalItemsQuery
+            {
+                IncludeItemTypes = new[] { BaseItemKind.Movie },
+                Recursive = true
+            }).Count;
+        }
+        catch
+        {
+            libraryCount = null;
+        }
+
+        var telemetrySnapshot = TelemetryService.BuildPayload("logs", libraryCount);
+        var instanceId = Plugin.Instance?.Configuration?.Telemetry?.InstanceId;
+        if (string.IsNullOrEmpty(instanceId))
+            instanceId = Guid.NewGuid().ToString();
+
+        return TelemetryService.BuildLogBundleJson(
+            instanceId,
+            Plugin.Instance?.Version?.ToString() ?? "unknown",
+            telemetrySnapshot,
+            note,
+            lines);
+    }
+
+    /// <summary>
+    /// Returns the EXACT bundle that "Send logs to developer" would upload, without
+    /// sending it. Backs the consent modal's "Preview exactly what's sent" so the user
+    /// sees the real log lines and telemetry snapshot, not just the anonymous part.
+    /// </summary>
+    [HttpGet("Telemetry/PreviewLogs")]
+    [Authorize(Policy = "RequiresElevation")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public ActionResult PreviewLogs()
+    {
+        return Content(BuildLogBundleJson(null), "application/json");
+    }
+
+    [HttpPost("Telemetry/SendLogs")]
+    [Authorize(Policy = "RequiresElevation")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<ActionResult> SendLogs([FromBody] SendLogsRequest? request)
+    {
+        var json = BuildLogBundleJson(request?.Note);
+        var code = await TelemetryService.PostLogBundleAsync(json).ConfigureAwait(false);
+
+        if (string.IsNullOrEmpty(code))
+            return BadRequest(new { error = "Could not reach the diagnostics endpoint. Check the server's internet connection and try again." });
+
+        return Ok(new { refCode = code });
     }
 
     /// <summary>
@@ -705,6 +813,12 @@ public class LetterboxdController : ControllerBase
             _logger.LogWarning("Failed to write Jellyfin rating for TMDb {TmdbId}: {Message}", tmdbId.Value, ex.Message);
         }
     }
+}
+
+public class SendLogsRequest
+{
+    /// <summary>Optional free-text note from the user describing what went wrong.</summary>
+    public string? Note { get; set; }
 }
 
 public class ReviewRequest

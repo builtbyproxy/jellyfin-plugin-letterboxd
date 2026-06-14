@@ -178,9 +178,45 @@
                         <input type="text" id="logsTextFilter" placeholder="Filter text (e.g. film title)" style="min-width:180px;" />
                         <button type="button" class="lb-btn lb-btn-secondary" id="logsCopyBtn">Copy</button>
                         <button type="button" class="lb-btn lb-btn-secondary" id="logsDownloadBtn">Download .log</button>
+                        <button type="button" class="lb-btn lb-btn-primary" id="logsSendBtn" title="Send these logs to the developer for help with a problem">Send logs to developer</button>
                         <span id="logsStatus" class="c-muted" style="font-size:0.85em;"></span>
                     </div>
                     <pre id="logsOutput" style="background:#0a0a0a;color:#cfcfcf;padding:1em;border-radius:6px;max-height:60vh;overflow:auto;font-size:0.78em;line-height:1.4;white-space:pre-wrap;word-break:break-word;border:1px solid rgba(255,255,255,0.06);">Loading...</pre>
+                </div>
+
+                <!-- SEND LOGS MODAL -->
+                <div id="sendLogsModal" class="lb-modal-overlay">
+                    <div class="lb-modal">
+                        <h3 style="margin-top:0;">Send logs to the developer</h3>
+                        <p class="c-muted" style="font-size:0.88em;line-height:1.5;">
+                            This sends your recent Letterboxd Sync log lines (the same ones shown on this tab) plus a
+                            buckets-only telemetry snapshot to the developer, to help diagnose a problem. You get a short
+                            reference code to quote if you open a bug report.
+                        </p>
+                        <p style="font-size:0.85em;line-height:1.5;background:rgba(255,140,0,0.08);border:1px solid rgba(255,140,0,0.3);border-radius:6px;padding:0.6em 0.8em;">
+                            <strong>Heads up:</strong> unlike the anonymous telemetry, logs are <strong>not anonymous</strong> &mdash;
+                            they can contain your Letterboxd username or film titles, and they are linked to this server's
+                            telemetry ID. Passwords, cookies, and auth tokens are never logged. Only send if you're comfortable
+                            sharing this with the developer.
+                        </p>
+                        <label class="lb-field" style="display:block;opacity:0.6;font-size:0.85em;margin-bottom:0.2em;">What went wrong? (optional, helps a lot)</label>
+                        <textarea id="sendLogsNote" rows="3" placeholder="e.g. Diary sync stopped working after I updated, films no longer appear on Letterboxd" style="width:100%;box-sizing:border-box;background:rgba(255,255,255,0.06);color:inherit;border:1px solid rgba(255,255,255,0.1);border-radius:4px;padding:0.5em;"></textarea>
+                        <div style="display:flex;gap:0.6em;flex-wrap:wrap;margin-top:0.9em;align-items:center;">
+                            <button type="button" class="lb-btn lb-btn-primary" id="sendLogsConfirm">Send</button>
+                            <a href="#" id="sendLogsPreview" class="lb-link" style="font-size:0.85em;">Preview exactly what's sent</a>
+                            <button type="button" class="lb-btn lb-btn-secondary" id="sendLogsCancel">Cancel</button>
+                            <span id="sendLogsStatus" class="c-muted" style="font-size:0.85em;"></span>
+                        </div>
+                        <pre id="sendLogsPreviewBox" style="display:none;margin-top:0.8em;background:#0a0a0a;color:#cfcfcf;padding:0.8em;border-radius:6px;max-height:40vh;overflow:auto;font-size:0.72em;line-height:1.4;white-space:pre-wrap;word-break:break-word;border:1px solid rgba(255,255,255,0.06);">Loading...</pre>
+                        <div id="sendLogsResult" style="display:none;margin-top:1em;padding:0.8em;background:rgba(0,224,84,0.08);border:1px solid rgba(0,224,84,0.3);border-radius:6px;">
+                            <div style="font-weight:600;margin-bottom:0.3em;">Sent. Thank you!</div>
+                            <div style="font-size:0.88em;line-height:1.5;">Your reference code:
+                                <code id="sendLogsRefCode" style="font-size:1.1em;background:rgba(0,0,0,0.35);padding:0.1em 0.4em;border-radius:4px;">&mdash;</code><br>
+                                If you open a bug report on GitHub, quote this code so the developer can find your logs.</div>
+                            <button type="button" class="lb-btn lb-btn-secondary" id="sendLogsCopyCode" style="margin-top:0.6em;">Copy code</button>
+                            <button type="button" class="lb-btn lb-btn-secondary" id="sendLogsClose" style="margin-top:0.6em;">Close</button>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- TELEMETRY PREVIEW MODAL -->
@@ -397,6 +433,56 @@
                             a.click();
                             document.body.removeChild(a);
                             URL.revokeObjectURL(url);
+                        },
+
+                        openSendLogs: function () {
+                            document.getElementById('sendLogsStatus').textContent = '';
+                            document.getElementById('sendLogsResult').style.display = 'none';
+                            document.getElementById('sendLogsPreviewBox').style.display = 'none';
+                            document.getElementById('sendLogsNote').value = '';
+                            document.getElementById('sendLogsConfirm').disabled = false;
+                            document.getElementById('sendLogsModal').style.display = 'block';
+                        },
+
+                        previewSendLogs: function () {
+                            var box = document.getElementById('sendLogsPreviewBox');
+                            // Toggle off if already showing.
+                            if (box.style.display !== 'none') { box.style.display = 'none'; return; }
+                            box.textContent = 'Loading the exact bundle...';
+                            box.style.display = 'block';
+                            ApiClient.ajax({
+                                url: ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/Telemetry/PreviewLogs'),
+                                type: 'GET', dataType: 'text'
+                            }).then(function (text) {
+                                try { text = JSON.stringify(JSON.parse(text), null, 2); } catch (e) {}
+                                box.textContent = text;
+                            }, function () {
+                                box.textContent = 'Failed to load preview (admin access required).';
+                            });
+                        },
+
+                        sendLogs: function () {
+                            var self = this;
+                            var btn = document.getElementById('sendLogsConfirm');
+                            var status = document.getElementById('sendLogsStatus');
+                            btn.disabled = true;
+                            status.textContent = 'Sending...';
+                            ApiClient.ajax({
+                                url: ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/Telemetry/SendLogs'),
+                                type: 'POST', contentType: 'application/json',
+                                data: JSON.stringify({ Note: document.getElementById('sendLogsNote').value || null })
+                            }).then(function (response) {
+                                response.json().then(function (data) {
+                                    status.textContent = '';
+                                    document.getElementById('sendLogsRefCode').textContent = data.refCode;
+                                    document.getElementById('sendLogsResult').style.display = 'block';
+                                });
+                            }, function (err) {
+                                btn.disabled = false;
+                                var msg = 'Send failed.';
+                                try { var d = JSON.parse(err.responseText || '{}'); if (d.error) msg = d.error; } catch (e) {}
+                                status.innerHTML = '<span class="c-red">' + msg + '</span>';
+                            });
                         },
 
                         getUserOptions: function () {
@@ -973,6 +1059,15 @@
                             document.getElementById('logsRefreshBtn').addEventListener('click', function () { self.loadLogs(); });
                             document.getElementById('logsCopyBtn').addEventListener('click', function () { self.copyLogs(); });
                             document.getElementById('logsDownloadBtn').addEventListener('click', function () { self.downloadLogs(); });
+                            document.getElementById('logsSendBtn').addEventListener('click', function () { self.openSendLogs(); });
+                            document.getElementById('sendLogsConfirm').addEventListener('click', function () { self.sendLogs(); });
+                            document.getElementById('sendLogsCancel').addEventListener('click', function () { document.getElementById('sendLogsModal').style.display = 'none'; });
+                            document.getElementById('sendLogsClose').addEventListener('click', function () { document.getElementById('sendLogsModal').style.display = 'none'; });
+                            document.getElementById('sendLogsPreview').addEventListener('click', function (e) { e.preventDefault(); self.previewSendLogs(); });
+                            document.getElementById('sendLogsCopyCode').addEventListener('click', function () {
+                                var code = document.getElementById('sendLogsRefCode').textContent;
+                                if (navigator.clipboard) navigator.clipboard.writeText(code);
+                            });
                             document.getElementById('logsUserFilter').addEventListener('change', function () { self.applyLogsFilter(); });
                             document.getElementById('logsTextFilter').addEventListener('input', function () { self.applyLogsFilter(); });
                             document.getElementById('historyFirst').addEventListener('click', function () { self.gotoHistoryPage(1); });
