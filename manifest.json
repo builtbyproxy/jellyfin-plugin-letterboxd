@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.18.1.0",
+        "changelog": "No functional changes. CI now uploads JUnit test results to Codecov Test Analytics so flaky tests and failures are tracked across releases. Nothing in the plugin itself changes.",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/releases/download/v1.18.1/jellyfin-plugin-letterboxd-v1.18.1.zip",
+        "checksum": "f3925031cde309eb2a9ceafdb93c017f",
+        "timestamp": "2026-06-16T02:49:38Z"
+      },
+      {
         "version": "1.18.0.0",
         "changelog": "Letterboxd often blocks plain username/password login with a Cloudflare or reCAPTCHA challenge, and accounts with two-factor authentication can never log in that way at all. This release makes raw cookies the clearly recommended way to authenticate, warns you when you save an account without them, and turns the cryptic two-factor login failure into a message that tells you exactly what to do.\n\n- Raw Cookies are now presented as the recommended way to authenticate, on both the admin settings page and your personal account page, with a short explanation of why password-only login is unreliable.\n- Saving an enabled account that has a password but no raw cookies now shows a non-blocking warning, so you find out before the first sync fails. The save still goes through.\n- Accounts with two-factor authentication enabled now fail login with a clear, actionable message instead of a vague generic error, telling you to add raw cookies (including cf_clearance) or disable 2FA.",
         "targetAbi": "10.11.9.0",
