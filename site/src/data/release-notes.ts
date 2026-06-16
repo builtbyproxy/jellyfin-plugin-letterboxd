@@ -10,6 +10,23 @@ export type ReleaseNotes = {
 
 export const releaseNotes: ReleaseNotes[] = [
   {
+    version: '1.18.0',
+    headline: 'Clearer guidance when Letterboxd login fails',
+    summary:
+      'Letterboxd often blocks plain username/password login with a Cloudflare or reCAPTCHA challenge, and accounts with two-factor authentication can never log in that way at all. Telemetry showed this is the single most common reason a sync fails on a fresh install. This release makes raw cookies the clearly recommended way to authenticate, warns you when you save an account without them, and turns the cryptic two-factor login failure into a message that tells you exactly what to do.',
+    highlights: {
+      improvements: [
+        'Raw Cookies are now presented as the recommended way to authenticate, on both the admin settings page and your personal account page, with a short explanation of why password-only login is unreliable (Cloudflare/reCAPTCHA challenges, and two-factor accounts that cannot use it at all).',
+        'Saving an enabled account that has a password but no raw cookies now shows a non-blocking warning, so you find out before the first sync fails rather than after. The save still goes through.',
+      ],
+      fixes: [
+        'Accounts with two-factor authentication enabled now fail login with a clear, actionable message ("this account has two-factor authentication enabled, add raw cookies including cf_clearance, or disable 2FA") instead of a vague generic login error. Password login genuinely cannot complete a 2FA challenge, so the plugin now says so and points you at the fix.',
+      ],
+    },
+    upgradeNotes:
+      'If your syncs have been failing with auth errors, open your Letterboxd Sync account settings and paste Raw Cookies (including cf_clearance) from a browser already signed in to Letterboxd. This is now the recommended setup, especially for accounts with two-factor authentication.',
+  },
+  {
     version: '1.17.0',
     headline: 'Send your logs to the developer in one click',
     summary:

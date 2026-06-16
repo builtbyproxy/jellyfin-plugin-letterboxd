@@ -179,7 +179,35 @@ public class LetterboxdAuth
                     sb.Append(m.GetString()).Append(' ');
                 msg = sb.ToString().Trim();
             }
+
+            // Two-factor accounts can never complete this flow: the form posts an empty
+            // authenticationCode (line above), so Letterboxd rejects the login. Surface a
+            // specific, actionable message instead of the vague generic error. Keep the
+            // "login error" prefix so TelemetryService.Classify still buckets it as auth.
+            if (IsTwoFactorMessage(msg))
+                throw new Exception(
+                    "Letterboxd login error: this account has two-factor authentication (2FA) enabled, "
+                    + "which username/password login can't complete. Add Raw Cookies (including cf_clearance) "
+                    + "copied from a browser already signed in to Letterboxd, or disable 2FA on the account. "
+                    + $"(Letterboxd said: {msg})");
+
             throw new Exception($"Letterboxd login error: {msg}");
         }
+    }
+
+    /// <summary>
+    /// True when Letterboxd's login response indicates the account needs a two-factor /
+    /// verification code that this username+password flow can't provide. Matches the
+    /// phrasings Letterboxd uses for that case so we can redirect the user to raw cookies.
+    /// </summary>
+    private static bool IsTwoFactorMessage(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message)) return false;
+        return message.Contains("two-factor", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("two factor", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("2fa", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("authentication code", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("authenticationCode", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("verification code", StringComparison.OrdinalIgnoreCase);
     }
 }

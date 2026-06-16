@@ -502,8 +502,9 @@
                                 + '<input type="text" class="lbUsername" /></div>'
                                 + '<div style="margin-bottom:0.5em;"><label class="lb-field">Letterboxd Password</label>'
                                 + '<input type="password" class="lbPassword" /></div>'
-                                + '<div style="margin-bottom:0.5em;"><label class="lb-field">Raw Cookies <span class="c-muted">(optional, Cloudflare bypass)</span></label>'
-                                + '<input type="text" class="rawCookies" placeholder="Paste cookie header if login gets 403" /></div>'
+                                + '<div style="margin-bottom:0.5em;"><label class="lb-field">Raw Cookies <span class="c-muted">(strongly recommended)</span></label>'
+                                + '<input type="text" class="rawCookies" placeholder="Paste cookie header from a signed-in browser (must include cf_clearance)" />'
+                                + '<div class="c-muted" style="font-size:0.8em;margin-top:0.3em;">Letterboxd often blocks username/password login with a Cloudflare/reCAPTCHA challenge, and accounts with two-factor auth can\'t use password login at all. Pasting raw cookies (including <code>cf_clearance</code>) from a browser already signed in to Letterboxd is the most reliable way to authenticate.</div></div>'
                                 + '<div style="margin-bottom:0.5em;"><label class="lb-field">User-Agent <span class="c-muted">(optional, must match the browser used to copy cookies)</span></label>'
                                 + '<input type="text" class="userAgent" placeholder="Leave blank for default (Firefox 134 on Windows)" />'
                                 + '<div class="c-muted" style="font-size:0.8em;margin-top:0.3em;">Cloudflare ties the <code>cf_clearance</code> cookie to the exact User-Agent that solved the challenge. If you copied cookies from Chrome, paste Chrome\'s UA here. Find yours at <a href="https://www.whatismybrowser.com/detect/what-is-my-user-agent/" target="_blank" class="lb-link">whatismybrowser.com</a>.</div></div>'
@@ -650,9 +651,23 @@
                                 config.JellyseerrApiKey = document.getElementById('jellyseerrApiKey').value.trim() || null;
                                 config.Telemetry = config.Telemetry || {};
                                 config.Telemetry.Enabled = document.getElementById('telemetryEnabled').checked;
+                                // Flag enabled accounts that depend on password-only login: Letterboxd
+                                // frequently reCAPTCHA-blocks it and 2FA accounts can't use it at all, which
+                                // is the most common cause of auth failures. Save proceeds either way.
+                                var noCookies = config.Accounts.filter(function (a) {
+                                    return a.Enabled && a.LetterboxdPassword && !a.RawCookies;
+                                }).length;
                                 ApiClient.updatePluginConfiguration(self.PluginId, config).then(function () {
                                     self.lastConfig = config;
                                     Dashboard.processPluginConfigurationUpdateResult();
+                                    if (noCookies > 0) {
+                                        Dashboard.alert({
+                                            title: 'Saved, but check authentication',
+                                            message: (noCookies === 1 ? 'One enabled account has' : noCookies + ' enabled accounts have')
+                                                + ' no Raw Cookies. Letterboxd often blocks password-only login (reCAPTCHA / 2FA), so syncing may fail. '
+                                                + 'Add Raw Cookies (including cf_clearance) from a signed-in browser for reliable authentication.'
+                                        });
+                                    }
                                 });
                             });
                         },

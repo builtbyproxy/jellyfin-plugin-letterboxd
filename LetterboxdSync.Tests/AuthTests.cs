@@ -147,6 +147,51 @@ public class AuthTests
     }
 
     [Fact]
+    public async Task AuthenticateAsync_TwoFactorAccount_ThrowsActionableError()
+    {
+        var handler = new AuthMockHandler((request, http) =>
+        {
+            var path = request.RequestUri?.PathAndQuery ?? "";
+
+            if (request.Method == HttpMethod.Get && path == "/")
+            {
+                http.CookieContainer.Add(BaseUri, new Cookie("com.xk72.webparts.csrf", "csrf"));
+                return new HttpResponseMessage(HttpStatusCode.OK);
+            }
+
+            if (request.Method == HttpMethod.Get && path.StartsWith("/sign-in"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("<input type=\"hidden\" name=\"__csrf\" value=\"csrf\" />")
+                };
+            }
+
+            if (request.Method == HttpMethod.Post && path.Contains("login.do"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("{\"result\":\"error\",\"messages\":[\"Please enter your two-factor authentication code.\"]}")
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        var (http, auth) = handler.CreateClients(TestLogger);
+        using var _ = http;
+
+        var ex = await Assert.ThrowsAsync<Exception>(
+            () => auth.AuthenticateAsync("testuser", "testpass"));
+
+        // Still classifiable as an auth failure...
+        Assert.Contains("login error", ex.Message);
+        // ...but now tells the user exactly how to fix it.
+        Assert.Contains("two-factor", ex.Message);
+        Assert.Contains("Raw Cookies", ex.Message);
+    }
+
+    [Fact]
     public async Task AuthenticateAsync_403OnSignIn_ThrowsCloudflareError()
     {
         var handler = new AuthMockHandler((request, http) =>
