@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.18.2.0",
+        "changelog": "Jellyseerr and Overseerr have merged into a single project called Seerr. The plugin now uses the new name everywhere you see it, in the settings page, your personal account page, and the documentation, so the labels match what you see in the app you are connecting to. Nothing about the integration changes: your existing Seerr URL, API key, and per-account settings are kept, and there is nothing to reconfigure.",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/releases/download/v1.18.2/jellyfin-plugin-letterboxd-v1.18.2.zip",
+        "checksum": "3234932a3abe5fb2fd412341dde41b4c",
+        "timestamp": "2026-06-22T02:23:10Z"
+      },
+      {
         "version": "1.18.1.0",
         "changelog": "No functional changes. CI now uploads JUnit test results to Codecov Test Analytics so flaky tests and failures are tracked across releases. Nothing in the plugin itself changes.",
         "targetAbi": "10.11.9.0",
