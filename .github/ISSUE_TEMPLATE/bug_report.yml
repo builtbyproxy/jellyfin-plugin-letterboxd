@@ -1,14 +1,14 @@
 name: Bug report
-description: Something isn't working — sync, lookups, auth, Cloudflare, the dashboard, etc.
+description: Something isn't working, such as sync, lookups, auth, Cloudflare, or the dashboard.
 title: "[Bug]: "
 labels: ["bug"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to file a report. The more of the fields below you fill in, the faster this can be diagnosed — most sync issues come down to your version, which sync path you're on, and what the logs say.
+        Thanks for taking the time to file a report. The more of the fields below you fill in, the faster this can be diagnosed. Most sync issues come down to your version, which sync path you're on, and what the logs say.
 
-        Before submitting, please skim the [Cloudflare troubleshooting](https://github.com/builtbyproxy/jellyfin-plugin-letterboxd#cloudflare-issues) section — a large share of "films won't sync" reports are an expired/mismatched `cf_clearance` cookie.
+        Before submitting, please skim the [Cloudflare troubleshooting](https://github.com/builtbyproxy/jellyfin-plugin-letterboxd#cloudflare-issues) section. A large share of "films won't sync" reports turn out to be an expired or mismatched `cf_clearance` cookie.
 
   - type: checkboxes
     id: preflight
@@ -19,24 +19,14 @@ body:
           required: true
         - label: I don't have any other Letterboxd-related Jellyfin plugins installed.
           required: true
-        - label: For sync/lookup failures, I've read the Cloudflare troubleshooting section in the README.
+        - label: For sync or lookup failures, I've read the Cloudflare troubleshooting section in the README.
           required: false
-
-  - type: textarea
-    id: what-is-wrong
-    attributes:
-      label: What's going wrong?
-      description: Describe the problem, what you expected to happen, and what actually happened. Include steps to reproduce if you can.
-      placeholder: |
-        e.g. Films I watch aren't appearing in my Letterboxd diary. I finished a film yesterday and ran the sync task manually, but nothing showed up. Expected it to be logged to my diary.
-    validations:
-      required: true
 
   - type: input
     id: plugin-version
     attributes:
       label: Plugin version
-      description: "Jellyfin → Dashboard → Plugins → Letterboxd Sync. Please give the exact version."
+      description: "Jellyfin, then Dashboard, then Plugins, then Letterboxd Sync. Please give the exact version."
       placeholder: "e.g. 1.18.4.0"
     validations:
       required: true
@@ -45,8 +35,21 @@ body:
     id: jellyfin-version
     attributes:
       label: Jellyfin version
-      description: "Jellyfin → Dashboard → server version (bottom of the page)."
+      description: "Jellyfin, then Dashboard, then the server version at the bottom of the page."
       placeholder: "e.g. 10.10.6"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: telemetry-enabled
+    attributes:
+      label: Do you have anonymous telemetry enabled?
+      description: "Settings, then Anonymous Telemetry. It's off by default."
+      options:
+        - "No"
+        - "Yes"
+        - Not sure
+      default: 0
     validations:
       required: true
 
@@ -56,24 +59,11 @@ body:
       label: Which sync path are you on?
       description: >
         Check your Jellyfin logs for a line saying either "Using official Letterboxd API" or
-        "Using web scraping fallback". This narrows things down a lot — pick "Not sure" if you can't find it.
+        "Using web scraping fallback". This narrows things down a lot. Pick "Not sure" if you can't find it.
       options:
         - Not sure
         - Official Letterboxd API
         - Web scraping fallback
-      default: 0
-    validations:
-      required: true
-
-  - type: dropdown
-    id: telemetry-enabled
-    attributes:
-      label: Do you have anonymous telemetry enabled?
-      description: "Settings → Anonymous Telemetry. It's off by default."
-      options:
-        - "No"
-        - "Yes"
-        - Not sure
       default: 0
     validations:
       required: true
@@ -83,10 +73,10 @@ body:
     attributes:
       label: Telemetry instance ID (optional)
       description: >
-        Only if telemetry is enabled and you're comfortable sharing it. Find it in
-        Settings → Anonymous Telemetry → Preview exact JSON (the `instance_id` field). This lets us
-        correlate your report with your anonymous pings. Heads up: pasting it into a public issue links
-        that ID to your past pings — if you'd rather not, the preview modal has a "Copy + regenerate ID" option.
+        Only if telemetry is enabled and you're comfortable sharing it. Find it in Settings, then
+        Anonymous Telemetry, then Preview exact JSON (the `instance_id` field). This lets us correlate your
+        report with your anonymous pings. Heads up, pasting it into a public issue links that ID to your past
+        pings. If you'd rather not, the preview modal has a "Copy + regenerate ID" option.
       placeholder: "e.g. 8a6f4f6e-1f2b-4c43-9a57-2f0e6f3b9d1c"
     validations:
       required: false
@@ -103,13 +93,23 @@ body:
       required: false
 
   - type: textarea
+    id: what-is-wrong
+    attributes:
+      label: What's going wrong?
+      description: Describe the problem, what you expected to happen, and what actually happened. Include steps to reproduce if you can.
+      placeholder: |
+        e.g. Films I watch aren't appearing in my Letterboxd diary. I finished a film yesterday and ran the sync task manually, but nothing showed up. I expected it to be logged to my diary.
+    validations:
+      required: true
+
+  - type: textarea
     id: logs
     attributes:
       label: Relevant log output (optional)
       description: >
         Paste any relevant lines from the Logs tab. Passwords, cookies, and auth tokens are never logged,
-        but feel free to redact your Letterboxd username or film titles if you prefer. This will be rendered
-        as a code block, so no need for backticks.
+        but feel free to redact your Letterboxd username or film titles if you prefer. This is rendered as a
+        code block, so no need for backticks.
       render: shell
     validations:
       required: false
