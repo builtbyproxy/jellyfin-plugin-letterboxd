@@ -76,7 +76,8 @@ body:
         Only if telemetry is enabled and you're comfortable sharing it. Find it in Settings, then
         Anonymous Telemetry, then Preview exact JSON (the `instance_id` field). This lets us correlate your
         report with your anonymous pings. Heads up, pasting it into a public issue links that ID to your past
-        pings. If you'd rather not, the preview modal has a "Copy + regenerate ID" option.
+        pings. Once you've shared it, you can regenerate your ID for future privacy using the
+        "Copy + regenerate ID" option in the preview modal.
       placeholder: "e.g. 8a6f4f6e-1f2b-4c43-9a57-2f0e6f3b9d1c"
     validations:
       required: false
