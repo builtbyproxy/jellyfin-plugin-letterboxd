@@ -9,7 +9,7 @@
     "versions": [
       {
         "version": "1.18.4.0",
-        "changelog": "fix: resolve film ids from data-postered-identifier after Letterboxd dropped data-film-id (#79)",
+        "changelog": "Fixes a sync failure introduced when Letterboxd changed their website. Films stopped logging to your diary because the plugin could no longer read each film's identifier from its Letterboxd page. The plugin now reads the new page format, so watched films sync again.",
         "targetAbi": "10.11.9.0",
         "sourceUrl": "https://github.com/builtbyproxy/jellyfin-plugin-letterboxd/releases/download/v1.18.4/jellyfin-plugin-letterboxd-v1.18.4.zip",
         "checksum": "65e69d16acf6e4b43fcaa4099f58e22f",
