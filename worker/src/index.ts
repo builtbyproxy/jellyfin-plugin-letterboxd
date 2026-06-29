@@ -162,9 +162,12 @@ async function recordInstallHit(env: Env, ip: string, kind: "manifest" | "downlo
 async function handleGet(req: Request, env: Env, ctx: ExecutionContext, url: URL): Promise<Response> {
   const ip = req.headers.get("cf-connecting-ip") ?? "unknown";
   const path = url.pathname;
+  // Only GET is a real install action. HEAD is served (CI link-checkers, monitors
+  // use curl -I) but never counted, so validators can't inflate the headcount.
+  const count = req.method === "GET";
 
   if (path === "/manifest.json") {
-    ctx.waitUntil(recordInstallHit(env, ip, "manifest", ""));
+    if (count) ctx.waitUntil(recordInstallHit(env, ip, "manifest", ""));
     // Edge-cache the upstream fetch so a GitHub hiccup or a poll storm doesn't
     // each cost a raw.githubusercontent round-trip.
     const upstream = await fetch(RAW_MANIFEST_URL, { cf: { cacheTtl: 300, cacheEverything: true } });
@@ -178,7 +181,7 @@ async function handleGet(req: Request, env: Env, ctx: ExecutionContext, url: URL
     const rel = decodeURIComponent(path.slice("/dl/".length));
     if (!SAFE_DL_PATH.test(rel)) return bad(400, "bad download path");
     const version = rel.split("/")[0]; // the release tag, e.g. "v1.18.4"
-    ctx.waitUntil(recordInstallHit(env, ip, "download", version));
+    if (count) ctx.waitUntil(recordInstallHit(env, ip, "download", version));
     return Response.redirect(GH_RELEASE_BASE + rel, 302);
   }
 
@@ -189,8 +192,9 @@ export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
 
-    // Unauthenticated GET endpoints power the install-count telemetry above.
-    if (req.method === "GET") return handleGet(req, env, ctx, url);
+    // Unauthenticated GET/HEAD endpoints power the install-count telemetry above.
+    // (HEAD is served for link-checkers but not counted; see handleGet.)
+    if (req.method === "GET" || req.method === "HEAD") return handleGet(req, env, ctx, url);
 
     if (req.method !== "POST") return bad(405, "POST only");
 
