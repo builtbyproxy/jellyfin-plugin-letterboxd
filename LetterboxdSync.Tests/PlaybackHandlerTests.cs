@@ -21,8 +21,19 @@ public class ServiceRegistratorTests
 
         registrator.RegisterServices(services, null!);
 
-        var hostedService = Assert.Single(services, d => d.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService));
+        var hostedService = Assert.Single(services, d => d.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService) && d.ImplementationType == typeof(PlaybackHandler));
         Assert.Equal(typeof(PlaybackHandler), hostedService.ImplementationType);
+    }
+
+    [Fact]
+    public void RegisterServices_AddsRepositoryMigrationAsHostedService()
+    {
+        var services = new ServiceCollection();
+        var registrator = new ServiceRegistrator();
+
+        registrator.RegisterServices(services, null!);
+
+        Assert.Single(services, d => d.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService) && d.ImplementationType == typeof(RepositoryMigrationService));
     }
 
     [Fact]
