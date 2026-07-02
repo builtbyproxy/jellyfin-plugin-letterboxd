@@ -10,6 +10,17 @@ export type ReleaseNotes = {
 
 export const releaseNotes: ReleaseNotes[] = [
   {
+    version: '1.19.0',
+    headline: 'Plugin catalog entry moves to a faster mirror',
+    summary:
+      'The plugin repository entry in your Jellyfin catalog is updated automatically to point at our edge-cached mirror of the exact same manifest. Updates and downloads are unchanged (the mirror redirects to the official GitHub releases), and nothing needs to be done on your side. As with downloads, the mirror counts an anonymous, weekly-rotating hash per poll so we can see roughly how many servers run the plugin; no IP addresses or personal data are ever stored, and this is separate from the opt-in telemetry.',
+    highlights: {
+      improvements: [
+        'Your Jellyfin plugin catalog entry for Letterboxd Sync is migrated automatically from the raw GitHub manifest URL to an edge-cached mirror serving the identical manifest. Update checks get faster and more reliable, and the maintainer gets an anonymous count of active installs. If you had renamed or disabled the repository entry, your name and setting are kept.',
+      ],
+    },
+  },
+  {
     version: '1.18.3',
     headline: 'More precise error reporting in telemetry',
     summary:
