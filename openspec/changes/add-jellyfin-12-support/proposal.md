@@ -2,11 +2,11 @@
 
 ## Why
 
-Jellyfin is skipping version 11: 10.11.x is the last release line with the "10." prefix and the next major is 12.0, already at RC2 (rc1 2026-06-21, rc2 2026-06-28), with stable expected soon. Early adopters are already running the plugin on 12.0 RCs in the field, and the current net9.0 build (compiled against SDK 10.11.9) loads and syncs there because a newer .NET runtime loads older assemblies.
+Jellyfin is skipping version 11: 10.11.x is the last release line with the "10." prefix and the next major is 12.0, already at RC3 (rc1 2026-06-21, rc2 2026-06-28, rc3 2026-07-22), with stable expected soon. The RC3 notes confirm the rationale: the `10.` prefix is dropped because no hard API break is planned, reinforcing that our risk is patch-level ABI holes, not a wholesale rewrite. Early adopters are already running the plugin on 12.0 RCs in the field, and the current net9.0 build (compiled against SDK 10.11.9) loads and syncs there because a newer .NET runtime loads older assemblies.
 
 That happy accident hides a hard cliff, confirmed by a compile probe on 2026-07-06: the 12.0 SDK packages (`Jellyfin.Controller`/`Jellyfin.Model` 12.0.0-rc2) target **net10.0** while the plugin targets net9.0, so the packages do not restore (NU1202). The moment we compile against the 12 SDK we must move to net10.0, and a net10.0 assembly will not load on Jellyfin 10.11's .NET 9 host. Unlike previous SDK bumps, adopting the 12 SDK is not "raise the floor a patch": it is a one-way split of the release stream. We also know from the 10.11.9 incident (`IUserManager.Users` removed in a patch release) that ABI holes can appear without warning, so "it runs on the RC today" is evidence, not a guarantee.
 
-Jellyfin's upgrade guidance tells users to remove repository plugins before migrating to 12 and warns the database migration cannot be rolled back, so users will ask what to do with this plugin. We need the answer written down before stable ships, not improvised the day dependabot opens the SDK-12 PR.
+Jellyfin's upgrade guidance tells users to remove repository plugins before migrating to 12 and warns the database migration cannot be rolled back; the RC3 release notes go further, telling RC installers to disable **all external plugins** and reinstall from a 12-compatible repository "or plugins may fail to load and cause unintended side effects". So users will ask what to do with this plugin. We need the answer written down before stable ships, not improvised the day dependabot opens the SDK-12 PR.
 
 ## What Changes
 

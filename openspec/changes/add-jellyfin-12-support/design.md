@@ -18,11 +18,11 @@ Rejected alternative: adopt the 12 SDK at stable and dual-build every release (n
 
 A separate job in `ci.yml` (matrix or standalone) that:
 - installs the .NET 10 SDK alongside 9 (`actions/setup-dotnet` with both versions),
-- builds with `-p:TargetFramework=net10.0 -p:JellyfinSdkVersion=12.0.0-rc2` (csproj gains overridable properties; defaults unchanged),
+- builds with `-p:TargetFramework=net10.0 -p:JellyfinSdkVersion=12.0.0-rc3` (csproj gains overridable properties; defaults unchanged),
 - runs the unit test suite,
 - is `continue-on-error: true` with a visible warning annotation on failure.
 
-Non-blocking because an RC ABI change must not block shipping fixes to the stable fleet; its job is early warning. The Jellyfin package versions come from a pinned string in the workflow (bump manually per RC), not `*-rc*` floating, so a red leg always identifies the exact RC that broke us.
+Non-blocking because an RC ABI change must not block shipping fixes to the stable fleet; its job is early warning. The Jellyfin package versions come from a pinned string in the workflow (bump manually per RC), not `*-rc*` floating, so a red leg always identifies the exact RC that broke us. Exact pinning also dodges a real hazard observed on NuGet (2026-07-26): alongside `12.0.0-rc3` there is a malformed `12.0.0-rcrc3` entry, which prerelease-floating version ranges could resolve to.
 
 ## Decision 3: The split, when it comes, is targetAbi-mediated
 
@@ -33,10 +33,11 @@ When we adopt the 12 SDK (new minor, e.g. 1.x → 1.(x+1) or 2.0):
 
 ## Decision 4: Migration guidance is "keep it installed, or reinstall from the catalog, your data survives"
 
-Jellyfin's 12 upgrade guidance says remove repository plugins before migrating. For this plugin either path is safe and the README will say so: configuration lives in Jellyfin's plugin configuration store and sync history is stored next to the plugin DLL; a catalog reinstall restores both paths, and Jellyfin regenerates `meta.json` on catalog installs. The only unsupported path is manually copying a plugin directory without `meta.json`.
+Jellyfin's 12 upgrade guidance says remove repository plugins before migrating, and the RC3 release notes escalate this for RC installers: disable **all external plugins** and reinstall from a 12-compatible repository, "or plugins may fail to load and cause unintended side effects". That instruction is aimed at the official plugin repositories (which carry a separate unstable channel); this plugin ships from its own catalog with no unstable channel, so our equivalent answer is unchanged and the smoke test (task 1.6) verifies a catalog reinstall works on a 12 server. For this plugin either path is safe and the README will say so: configuration lives in Jellyfin's plugin configuration store and sync history is stored next to the plugin DLL; a catalog reinstall restores both paths, and Jellyfin regenerates `meta.json` on catalog installs. The only unsupported path is manually copying a plugin directory without `meta.json`.
 
 ## Risks / watch items
 
 - **Metadata behaviour changes in 12.** 12.0 reworks database and metadata internals; TMDb provider-ID behaviour could shift in ways that surface as `tmdb_lookup` telemetry errors rather than compile failures. The fleet watch (error categories segmented by `jellyfin_version`) is the tripwire; it is operated from the private ops repo and needs no plugin change.
 - **RC packages disappearing at stable.** NuGet prerelease packages may be delisted after 12.0.0 ships; the CI leg then repoints at stable and effectively becomes the Phase-B verification.
 - **.NET 10 SDK availability on runners.** `setup-dotnet` handles side-by-side installs; if the pinned SDK image lags, the leg fails visibly, which is acceptable for a non-blocking job.
+- **Stable is close and Phase A isn't landed.** RC cadence (rc1 2026-06-21, rc2 2026-06-28, rc3 2026-07-22) points at stable within weeks. The early-warning value of the CI leg drops to zero once stable ships (it becomes plain Phase-B verification), so tasks 1.3–1.4 are only worth doing now, not later.
