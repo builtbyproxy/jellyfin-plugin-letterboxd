@@ -22,4 +22,4 @@
 ## 4. Release plumbing
 
 - [ ] 4.1 Bump `AssemblyVersion`/`FileVersion` (minor) in `Directory.Build.props` and `LetterboxdSync/LetterboxdSync.csproj`
-- [ ] 4.2 PR with Conventional Commits title (`feat:`), `## Release notes` paragraph (user-facing prose: review modal now shows your existing Jellyfin rating, and supports half stars), and matching `site/src/data/release-notes.ts` entry
+- [x] 4.2 PR with Conventional Commits title (`feat:`), `## Release notes` paragraph (user-facing prose: review modal now shows your existing Jellyfin rating, and supports half stars), and matching `site/src/data/release-notes.ts` entry
