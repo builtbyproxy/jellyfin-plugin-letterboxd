@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "2.2.0.0",
+        "changelog": "The review modal now shows the rating you already gave. Instead of always opening at \"No rating\", it looks up the rating stored in Jellyfin, whether you set it in the Jellyfin web UI, a client app like Infuse, or an earlier Jellyscribe review, and pre-fills the stars for you, for films, shows, and individual episodes. The star widget also supports half stars now: click the left half of a star for a .5 rating, matching what Letterboxd itself accepts, so a 7/10 in Jellyfin finally displays as the 3.5 stars it really is.",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://lbsync-telemetry.lachlanbyoung.workers.dev/dl/v2.2.0/jellyfin-plugin-letterboxd-v2.2.0.zip",
+        "checksum": "c114c86e2eefbaf2315f0dc493d45c06",
+        "timestamp": "2026-07-28T10:14:49Z"
+      },
+      {
         "version": "2.1.2.0",
         "changelog": "The sidebar link this plugin adds to Jellyfin's nav is injected by registering with the File Transformation plugin once, at Jellyfin startup. That registration was racing File Transformation's own startup init, so on some restarts (including scheduled ones) it silently failed and the link just never appeared, with nothing in the logs beyond a generic, undiagnosable error. Registration now retries a few times before giving up, and a real failure logs the actual cause instead of a useless wrapper message.",
         "targetAbi": "10.11.9.0",
