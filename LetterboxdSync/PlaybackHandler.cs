@@ -111,6 +111,18 @@ public class PlaybackHandler : IHostedService, IDisposable
                     _logger.LogInformation(
                         "Skipping real-time sync of {Title} for {LbUser}: auth breaker open; the scheduled task catches up once credentials are re-saved",
                         e.Item.Name, account.LetterboxdUsername);
+                    // Record the skip so sync history explains why this watch has no
+                    // real-time entry, matching the scheduled runner's behavior.
+                    SyncHistory.Record(new SyncEvent
+                    {
+                        FilmTitle = e.Item.Name,
+                        TmdbId = tmdbId,
+                        Username = user.Username,
+                        Timestamp = DateTime.UtcNow,
+                        Status = SyncStatus.Skipped,
+                        Error = $"Sync paused for {account.LetterboxdUsername}: login failing; re-save credentials to resume",
+                        Source = "playback"
+                    });
                     continue;
                 }
 
