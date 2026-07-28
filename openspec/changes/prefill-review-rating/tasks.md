@@ -17,7 +17,7 @@
 
 - [x] 3.1 In `openReview` (both pages): after the synchronous reset, fetch `ItemRating` with `tmdbId` (+ season/episode for the Serializd path), and on a non-null `stars` paint the widget and label; skip the fetch when `tmdbId` is 0/absent
 - [x] 3.2 Fail-soft behavior: any fetch error or null response leaves the widget at "No rating" with the modal fully usable; no user-visible error
-- [ ] 3.3 Manual verification against a local Jellyfin (deploy via `./deploy.sh`): pre-fill for a rated movie, an unrated movie, a rated episode, and a slug-only history entry; confirm posting the pre-filled value writes through and `WriteJellyfinRating` round-trips
+- [x] 3.3 Manual verification against a local Jellyfin (deploy via `./deploy.sh`): pre-fill for a rated movie, an unrated movie, a rated episode, and a slug-only history entry; confirm posting the pre-filled value writes through and `WriteJellyfinRating` round-trips
 
 ## 4. Release plumbing
 
