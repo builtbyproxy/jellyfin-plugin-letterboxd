@@ -10,6 +10,18 @@ export type ReleaseNotes = {
 
 export const releaseNotes: ReleaseNotes[] = [
   {
+    version: '2.2.0',
+    headline: 'The review modal now shows the rating you already gave, and stars come in halves',
+    summary:
+      'Opening the review modal used to always start at "No rating", even when Jellyfin already knew exactly what you\'d rated the film or episode, whether you rated it in the Jellyfin web UI, a client app like Infuse, or through an earlier Jellyscribe review. Now the modal looks up your stored rating and pre-fills the stars, so you\'re editing your rating rather than re-entering it. The star widget also finally does half stars: click the left half of a star for a .5 rating, matching what Letterboxd itself supports. Ratings on Jellyfin\'s 10-point scale (like a 7/10) now display faithfully as 3.5 stars instead of not showing at all.',
+    highlights: {
+      new: [
+        'The review modal pre-fills its stars from the rating already stored in Jellyfin, for films, shows, and individual episodes, whichever app you rated them in.',
+        'Half-star ratings: click the left half of a star for .5 increments, on both the admin dashboard and the user page. Letterboxd reviews carry the half star as-is; Serializd reviews map it onto the 10-point scale.',
+      ],
+    },
+  },
+  {
     version: '2.1.2',
     headline: 'Sidebar link now reliably survives a Jellyfin restart',
     summary:
