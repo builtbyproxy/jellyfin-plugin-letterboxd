@@ -6,6 +6,7 @@ using System.Net.Mime;
 using System.Threading;
 using System.Threading.Tasks;
 using Jellyfin.Data.Enums;
+using Jellyfin.Database.Implementations.Entities;
 using LetterboxdSync.Configuration;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller.Entities;
@@ -772,6 +773,96 @@ public class LetterboxdController : JellyfinUserApiController
     }
 
     /// <summary>
+    /// Returns the calling user's stored Jellyfin rating for an item, both raw
+    /// (1-10) and mapped to Letterboxd half-stars, so the review modal can
+    /// pre-fill its star widget. Movies resolve by TMDb id; TV resolves the
+    /// series by TMDb id, or a single episode when season and episode numbers
+    /// are supplied (matching how Serializd sync sources episode vs show
+    /// ratings). Always 200 with null fields when the item or rating is absent:
+    /// the pre-fill fetch must never surface an error in the modal.
+    /// </summary>
+    [HttpGet("ItemRating")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public ActionResult GetItemRating(
+        [FromQuery] int? tmdbId = null,
+        [FromQuery] bool isShow = false,
+        [FromQuery] int? seasonNumber = null,
+        [FromQuery] int? episodeNumber = null)
+    {
+        var userId = GetCurrentUserId();
+        if (string.IsNullOrEmpty(userId))
+            return BadRequest(new { error = "Could not determine user" });
+
+        var none = Ok(new { rating = (double?)null, stars = (double?)null });
+        if (!tmdbId.HasValue || tmdbId.Value <= 0)
+            return none;
+
+        var user = _userManager.GetUsers().FirstOrDefault(u => u.Id.ToString("N") == userId);
+        if (user == null)
+            return none;
+
+        BaseItem? item;
+        if (!isShow)
+            item = FindMovieByTmdbId(user, tmdbId.Value);
+        else if (seasonNumber.HasValue && episodeNumber.HasValue)
+            item = FindEpisodeByTmdbId(user, tmdbId.Value, seasonNumber.Value, episodeNumber.Value);
+        else
+            item = FindSeriesByTmdbId(user, tmdbId.Value);
+
+        if (item == null)
+            return none;
+
+        var stored = _userDataManager.GetUserData(user, item)?.Rating;
+        if (!stored.HasValue || stored.Value <= 0)
+            return none;
+
+        return Ok(new { rating = (double?)stored.Value, stars = Helpers.MapRating(stored.Value) });
+    }
+
+    /// <summary>
+    /// Resolve a library movie by TMDb id for the given user. Shared by the
+    /// rating writeback and the ItemRating read path so the two cannot drift.
+    /// </summary>
+    private BaseItem? FindMovieByTmdbId(User user, int tmdbId)
+    {
+        return _libraryManager.GetItemList(new InternalItemsQuery(user)
+        {
+            IncludeItemTypes = new[] { BaseItemKind.Movie },
+            IsVirtualItem = false,
+            Recursive = true
+        }).FirstOrDefault(m => m.GetProviderId(MediaBrowser.Model.Entities.MetadataProvider.Tmdb) == tmdbId.ToString());
+    }
+
+    private BaseItem? FindSeriesByTmdbId(User user, int tmdbId)
+    {
+        return _libraryManager.GetItemList(new InternalItemsQuery(user)
+        {
+            IncludeItemTypes = new[] { BaseItemKind.Series },
+            IsVirtualItem = false,
+            Recursive = true
+        }).FirstOrDefault(s => s.GetProviderId(MediaBrowser.Model.Entities.MetadataProvider.Tmdb) == tmdbId.ToString());
+    }
+
+    /// <summary>
+    /// Resolve an episode by series TMDb id + season/episode number. The series
+    /// TMDb id lives on the parent Series entity; SeriesTmdbIdReader is the one
+    /// place that knows that, shared with Serializd sync.
+    /// </summary>
+    private BaseItem? FindEpisodeByTmdbId(User user, int seriesTmdbId, int seasonNumber, int episodeNumber)
+    {
+        return _libraryManager.GetItemList(new InternalItemsQuery(user)
+        {
+            IncludeItemTypes = new[] { BaseItemKind.Episode },
+            IsVirtualItem = false,
+            Recursive = true
+        }).OfType<MediaBrowser.Controller.Entities.TV.Episode>()
+          .FirstOrDefault(ep => Serializd.SerializdSyncRunner.SeriesTmdbIdReader(ep) == seriesTmdbId
+              && ep.ParentIndexNumber == seasonNumber
+              && ep.IndexNumber == episodeNumber);
+    }
+
+    /// <summary>
     /// Mirror the dashboard review's star rating into Jellyfin's UserItemData.Rating
     /// so it survives plugin uninstall and is visible to other clients/plugins.
     /// Always overwrites: posting a review is the user's latest input, so it wins.
@@ -790,12 +881,7 @@ public class LetterboxdController : JellyfinUserApiController
         if (user == null)
             return;
 
-        var movie = _libraryManager.GetItemList(new InternalItemsQuery(user)
-        {
-            IncludeItemTypes = new[] { BaseItemKind.Movie },
-            IsVirtualItem = false,
-            Recursive = true
-        }).FirstOrDefault(m => m.GetProviderId(MediaBrowser.Model.Entities.MetadataProvider.Tmdb) == tmdbId.Value.ToString());
+        var movie = FindMovieByTmdbId(user, tmdbId.Value);
 
         if (movie == null)
         {

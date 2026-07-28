@@ -48,7 +48,7 @@ Deploy a debug build to the local Jellyfin server: `./deploy.sh` (scp's `Jellysc
 ### Plugin surface
 
 - `Plugin.cs` + `ServiceRegistrator.cs` register services and config.
-- `Api/LetterboxdController.cs` and `Api/SidebarController.cs` expose REST endpoints consumed by the config dashboard.
+- `Api/LetterboxdController.cs` and `Api/SidebarController.cs` expose REST endpoints consumed by the config dashboard. `LetterboxdController` also serves the read-only `ItemRating` endpoint the review modal uses to pre-fill its stars from the caller's stored Jellyfin rating.
 - `Web/*.html` and `Web/*.js` are embedded resources (see `LetterboxdSync.csproj`) served as the plugin's config pages.
 - `SidebarInjection.cs` registers a transformation with the File Transformation plugin to inject the sidebar link.
 

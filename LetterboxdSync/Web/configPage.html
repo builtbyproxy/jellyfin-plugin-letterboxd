@@ -165,8 +165,10 @@
                 #letterboxdSyncConfigPage .ws-modal-x { position: absolute; top: 12px; right: 14px; width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--ws-border); background: var(--ws-surface-2); color: var(--ws-muted); font-size: 21px; line-height: 1; cursor: pointer; display: grid; place-items: center; z-index: 2; }
                 #letterboxdSyncConfigPage .ws-modal-x:hover { color: var(--ws-text); border-color: var(--ws-faint); }
                 #letterboxdSyncConfigPage .ws-row { margin-bottom: 12px; }
-                #letterboxdSyncConfigPage .ws-star { cursor: pointer; font-size: 1.6em; user-select: none; color: var(--ws-faint); }
-                #letterboxdSyncConfigPage .ws-star.filled { color: var(--ws-warn); }
+                #letterboxdSyncConfigPage .ws-star { cursor: pointer; font-size: 1.6em; user-select: none; color: var(--ws-faint); position: relative; display: inline-block; }
+                #letterboxdSyncConfigPage .ws-star .ws-star-on { position: absolute; left: 0; top: 0; width: 0; overflow: hidden; color: var(--ws-warn); pointer-events: none; }
+                #letterboxdSyncConfigPage .ws-star.filled .ws-star-on { width: 100%; }
+                #letterboxdSyncConfigPage .ws-star.half .ws-star-on { width: 50%; }
                 #letterboxdSyncConfigPage .ws-muted { color: var(--ws-muted); }
                 #letterboxdSyncConfigPage .ws-green { color: var(--ws-ok); } #letterboxdSyncConfigPage .ws-red { color: var(--ws-crit); }
                 #letterboxdSyncConfigPage .ws-logs { font-family: var(--ws-mono); font-size: 12px; line-height: 1.6; color: var(--ws-muted); white-space: pre-wrap; word-break: break-word; padding: 16px; max-height: 60vh; overflow: auto; }
@@ -365,7 +367,7 @@
                     <h3 id="reviewTitle">Write review</h3>
                     <textarea id="reviewText" rows="4" class="ws-input" placeholder="Write your review…"></textarea>
                     <div class="ws-row" style="margin-top:12px;"><label class="ws-field">Rating</label><div id="starRating">
-                        <span class="ws-star" data-val="1">&#9734;</span><span class="ws-star" data-val="2">&#9734;</span><span class="ws-star" data-val="3">&#9734;</span><span class="ws-star" data-val="4">&#9734;</span><span class="ws-star" data-val="5">&#9734;</span>
+                        <span class="ws-star" data-val="1">&#9734;<span class="ws-star-on">&#9733;</span></span><span class="ws-star" data-val="2">&#9734;<span class="ws-star-on">&#9733;</span></span><span class="ws-star" data-val="3">&#9734;<span class="ws-star-on">&#9733;</span></span><span class="ws-star" data-val="4">&#9734;<span class="ws-star-on">&#9733;</span></span><span class="ws-star" data-val="5">&#9734;<span class="ws-star-on">&#9733;</span></span>
                         <span id="ratingLabel" class="ws-muted" style="margin-left:8px;font-size:12px;">No rating</span></div>
                         <input type="hidden" id="reviewRating" value="" /></div>
                     <label class="ws-muted" style="display:block;margin:8px 0;font-size:12.5px;"><input type="checkbox" id="reviewSpoilers" /> Contains spoilers</label>
@@ -492,14 +494,10 @@
                             document.getElementById('sendLogsCancel').addEventListener('click', function () { document.getElementById('sendLogsBox').style.display = 'none'; });
                             document.getElementById('sendLogsConfirm').addEventListener('click', function () { self.sendLogs(); });
                             document.querySelectorAll('#starRating .ws-star').forEach(function (star) {
-                                star.addEventListener('click', function () {
+                                star.addEventListener('click', function (e) {
                                     var val = parseFloat(this.getAttribute('data-val'));
-                                    document.getElementById('reviewRating').value = val;
-                                    document.getElementById('ratingLabel').textContent = val + ' / 5';
-                                    document.querySelectorAll('#starRating .ws-star').forEach(function (s) {
-                                        var sv = parseFloat(s.getAttribute('data-val'));
-                                        s.classList.toggle('filled', sv <= val); s.innerHTML = sv <= val ? '&#9733;' : '&#9734;';
-                                    });
+                                    if (e.offsetX < this.offsetWidth / 2) val -= 0.5;
+                                    self.paintStars(val);
                                 });
                             });
                         },
@@ -836,6 +834,18 @@
                         },
 
                         /* ===== Review ===== */
+                        /* Paint the star widget to a 0.5-step value (null/0 clears). Single
+                           writer for reviewRating and ratingLabel so click, reset, and
+                           pre-fill can't disagree. */
+                        paintStars: function (val) {
+                            document.getElementById('reviewRating').value = val || '';
+                            document.getElementById('ratingLabel').textContent = val ? val + ' / 5' : 'No rating';
+                            document.querySelectorAll('#starRating .ws-star').forEach(function (s) {
+                                var sv = parseFloat(s.getAttribute('data-val'));
+                                s.classList.toggle('filled', !!val && sv <= val);
+                                s.classList.toggle('half', !!val && sv - 0.5 === val);
+                            });
+                        },
                         openReview: function (svc, tmdbId, title, slug, season, episode) {
                             this.reviewSvc = svc; this.reviewTmdb = tmdbId; this.reviewSlug = slug || '';
                             this.reviewTitleText = title || '';
@@ -848,15 +858,32 @@
                             document.getElementById('reviewRewatch').checked = false;
                             document.getElementById('rewatchDateRow').style.display = 'none';
                             document.getElementById('reviewDate').value = new Date().toISOString().split('T')[0];
-                            document.getElementById('reviewRating').value = '';
-                            document.getElementById('ratingLabel').textContent = 'No rating';
-                            document.querySelectorAll('#starRating .ws-star').forEach(function (s) { s.classList.remove('filled'); s.innerHTML = '&#9734;'; });
+                            this.paintStars(null);
                             document.getElementById('reviewStatus').textContent = '';
                             var isLetterboxd = svc !== 'serializd';
                             document.getElementById('reviewRewatchRow').style.display = isLetterboxd ? '' : 'none';
                             document.getElementById('reviewAccountRow').style.display = 'none';
                             if (isLetterboxd) this.populateReviewAccountDropdown();
                             document.getElementById('reviewModal').classList.add('show');
+                            this.prefillRating(svc, tmdbId);
+                        },
+                        /* Pre-fill the stars from the rating already stored in Jellyfin.
+                           Fail-soft by design: any error or null response just leaves
+                           "No rating", so the modal never blocks on this lookup. The
+                           sequence token discards a late response if another item's
+                           modal was opened in the meantime. */
+                        prefillRating: function (svc, tmdbId) {
+                            this.reviewOpenSeq = (this.reviewOpenSeq || 0) + 1;
+                            var seq = this.reviewOpenSeq, self = this;
+                            if (!tmdbId) return;
+                            var q = 'Jellyfin.Plugin.LetterboxdSync/ItemRating?tmdbId=' + tmdbId;
+                            if (svc === 'serializd') {
+                                q += '&isShow=true';
+                                if (this.reviewSeason && this.reviewEpisode) q += '&seasonNumber=' + this.reviewSeason + '&episodeNumber=' + this.reviewEpisode;
+                            }
+                            ApiClient.getJSON(ApiClient.getUrl(q)).then(function (d) {
+                                if (seq === self.reviewOpenSeq && d && d.stars) self.paintStars(d.stars);
+                            }).catch(function () { });
                         },
                         // Show the "Post as" row only when the current Jellyfin user has more than
                         // one enabled Letterboxd account. Leaving the empty first option selected
