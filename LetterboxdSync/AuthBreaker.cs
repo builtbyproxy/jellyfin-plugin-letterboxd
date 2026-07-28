@@ -126,6 +126,23 @@ public static class AuthBreaker
     }
 
     /// <summary>
+    /// Collapse an auth exception message to something safe to persist and show:
+    /// single line, bounded length. Auth failures can echo fragments of the HTTP
+    /// response (or, worst case, credential-adjacent text) in their message, and
+    /// LastError is written to disk and read by dashboards, so it must never
+    /// carry the raw message verbatim.
+    /// </summary>
+    internal static string? Sanitize(string? error)
+    {
+        if (string.IsNullOrWhiteSpace(error))
+            return null;
+
+        var oneLine = string.Join(" ", error.Split('\r', '\n', '\t')
+            .Select(p => p.Trim()).Where(p => p.Length > 0));
+        return oneLine.Length <= 160 ? oneLine : oneLine[..160] + "…";
+    }
+
+    /// <summary>
     /// Record an authentication failure. Returns true only when this call
     /// transitioned the breaker from closed to open, so the caller can raise
     /// the one-time admin notification.
@@ -145,7 +162,7 @@ public static class AuthBreaker
             var wasOpen = e.OpenedAtUtc != null;
             e.ConsecutiveFailures++;
             e.FirstFailureUtc ??= DateTime.UtcNow;
-            e.LastError = error;
+            e.LastError = Sanitize(error);
             if (!wasOpen && e.ConsecutiveFailures >= Threshold)
                 e.OpenedAtUtc = DateTime.UtcNow;
             Save();

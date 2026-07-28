@@ -109,6 +109,29 @@ public class AuthBreakerTests : IDisposable
     }
 
     [Fact]
+    public void LastError_IsSanitized_SingleLineAndBounded()
+    {
+        var nasty = "Login failed:\r\nSet-Cookie: session=SECRETVALUE\n" + new string('x', 500);
+        for (var i = 0; i < 3; i++) AuthBreaker.RecordFailure("u1", "kostadamus", nasty);
+
+        var stored = AuthBreaker.GetState("u1", "kostadamus")!.LastError!;
+        Assert.DoesNotContain("\n", stored);
+        Assert.DoesNotContain("\r", stored);
+        Assert.True(stored.Length <= 161, $"LastError length {stored.Length} exceeds bound");
+
+        var open = Assert.Single(AuthBreaker.GetOpenEntries());
+        Assert.Equal(stored, open.LastError);
+    }
+
+    [Fact]
+    public void Sanitize_NullOrWhitespace_ReturnsNull()
+    {
+        Assert.Null(AuthBreaker.Sanitize(null));
+        Assert.Null(AuthBreaker.Sanitize("   "));
+        Assert.Equal("plain message", AuthBreaker.Sanitize("plain message"));
+    }
+
+    [Fact]
     public void UsernameMatch_IsCaseInsensitive()
     {
         for (var i = 0; i < 3; i++) AuthBreaker.RecordFailure("u1", "Kostadamus", "e");

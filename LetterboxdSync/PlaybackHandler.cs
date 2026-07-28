@@ -150,7 +150,9 @@ public class PlaybackHandler : IHostedService, IDisposable
                         Username = user.Username,
                         Timestamp = DateTime.UtcNow,
                         Status = SyncStatus.Failed,
-                        Error = ex.Message,
+                        // Sanitized: auth error messages can echo response-body fragments,
+                        // and sync history renders in the dashboard.
+                        Error = AuthBreaker.Sanitize(ex.Message),
                         Source = "playback"
                     });
                     if (AuthBreaker.RecordFailure(breakerUserId, account.LetterboxdUsername, ex.Message))
