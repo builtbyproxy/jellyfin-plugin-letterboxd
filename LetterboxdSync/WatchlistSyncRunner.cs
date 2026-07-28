@@ -26,13 +26,18 @@ public class WatchlistSyncRunner
     private readonly ILibraryManager _libraryManager;
     private readonly IUserManager _userManager;
     private readonly IPlaylistManager _playlistManager;
+    private readonly MediaBrowser.Model.Activity.IActivityManager? _activityManager;
 
+    // activityManager is optional so existing construction sites (and tests) keep
+    // working; a null only skips the auth-breaker admin notification.
     public WatchlistSyncRunner(
         ILoggerFactory loggerFactory,
         ILibraryManager libraryManager,
         IUserManager userManager,
-        IPlaylistManager playlistManager)
+        IPlaylistManager playlistManager,
+        MediaBrowser.Model.Activity.IActivityManager? activityManager = null)
     {
+        _activityManager = activityManager;
         _logger = loggerFactory.CreateLogger<WatchlistSyncRunner>();
         _libraryManager = libraryManager;
         _userManager = userManager;
@@ -178,6 +183,15 @@ public class WatchlistSyncRunner
         _logger.LogInformation("Starting watchlist sync for {Username} (source={Source})", user.Username, source);
         SyncProgress.SetPhase(SyncProgress.TrackLetterboxd, $"Authenticating {user.Username}");
 
+        var breakerUserId = user.Id.ToString("N");
+        if (AuthBreaker.IsOpen(breakerUserId, account.LetterboxdUsername))
+        {
+            _logger.LogInformation(
+                "Skipping watchlist sync for {Username}: auth breaker open; re-save credentials to resume",
+                account.LetterboxdUsername);
+            return;
+        }
+
         ILetterboxdService service;
         try
         {
@@ -190,8 +204,12 @@ public class WatchlistSyncRunner
             _logger.LogError("Auth failed for {Username}: {Message}", user.Username, ex.Message);
             // No SyncEvent is recorded on this early-exit path; hook telemetry directly.
             TelemetryService.RecordError(TelemetryService.Classify(ex.Message));
+            if (AuthBreaker.RecordFailure(breakerUserId, account.LetterboxdUsername, ex.Message))
+                await AuthBreaker.NotifyOpenedAsync(_activityManager, user.Id, account.LetterboxdUsername, _logger).ConfigureAwait(false);
             return;
         }
+
+        AuthBreaker.RecordSuccess(breakerUserId, account.LetterboxdUsername);
 
         using var _s = service;
 

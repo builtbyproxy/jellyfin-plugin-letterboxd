@@ -414,6 +414,16 @@
                                 .then(function (c) {
                                     self.config = c;
                                     self.renderAccounts();
+                                    // Paused badges for accounts whose auth breaker is open. Fail-soft:
+                                    // if the fetch errors, cards simply render without the badge.
+                                    ApiClient.getJSON(ApiClient.getUrl('Jellyfin.Plugin.LetterboxdSync/AuthBreakers')).then(function (d) {
+                                        var map = {};
+                                        ((d && d.breakers) || []).forEach(function (b) {
+                                            map[(b.userJellyfinId || '') + '|' + (b.letterboxdUsername || '').toLowerCase()] = b.failingSinceUtc ? String(b.failingSinceUtc).slice(0, 10) : '?';
+                                        });
+                                        self.breakers = map;
+                                        self.renderAccounts();
+                                    }).catch(function () { });
                                     self.loadOverview();
                                     document.getElementById('jellyseerrUrl').value = c.JellyseerrUrl || '';
                                     document.getElementById('jellyseerrApiKey').value = c.JellyseerrApiKey || '';
@@ -717,6 +727,8 @@
                         acctCard: function (svc, a) {
                             var self = this;
                             var uname = svc === 'serializd' ? (a.Email || '?') : (a.LetterboxdUsername || '?');
+                            // Auth breaker (Letterboxd only): paused holds the failing-since date string, or falsy.
+                            var paused = svc !== 'serializd' && ((self.breakers || {})[(a.UserJellyfinId || '') + '|' + (a.LetterboxdUsername || '').toLowerCase()] || '');
                             var feats;
                             if (svc === 'serializd') feats = [['Favourites', a.SyncFavorites], ['Watchlist', a.SyncWatchlist], ['Seerr', a.AutoRequestWatchlist], ['Import', a.EnableDiaryImport], ['Date filter', a.EnableDateFilter]];
                             else feats = [['Favourites', a.SyncFavorites], ['Watchlist', a.EnableWatchlistSync], ['Seerr', a.AutoRequestWatchlist], ['Import', a.EnableDiaryImport], ['Cookies', !!a.RawCookies]];
@@ -726,7 +738,7 @@
                                 '<div style="min-width:0;"><div class="u" title="' + uname + '">' + uname + '</div><div class="svc ' + (svc === 'serializd' ? 'tv' : 'film') + '">' + (svc === 'serializd' ? 'Serializd · TV' : 'Letterboxd · Film') + '</div></div>' +
                                 (a.IsPrimary ? '<span class="ws-prim">Primary</span>' : '') + '</div>' +
                                 '<div class="ws-featchips">' + chips + '</div>' +
-                                '<div class="foot"><span class="st">' + (a.Enabled !== false ? '<span class="ws-green">Enabled</span>' : '<span class="ws-muted">Paused</span>') + '</span>' +
+                                '<div class="foot"><span class="st">' + (paused ? '<span class="ws-red" title="Letterboxd login has been failing since ' + paused + '. Re-save this account\'s credentials to resume syncing.">Login failing · sync paused</span>' : (a.Enabled !== false ? '<span class="ws-green">Enabled</span>' : '<span class="ws-muted">Paused</span>')) + '</span>' +
                                 '<button type="button" class="ws-linkbtn" onclick="WS.openAccount({svc:\'' + svc + '\',user:\'' + a.UserJellyfinId + '\',id:\'' + encodeURIComponent(uname) + '\'})">Edit ›</button></div></div>';
                         },
 

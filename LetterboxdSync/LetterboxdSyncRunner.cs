@@ -26,13 +26,19 @@ public class LetterboxdSyncRunner
     private readonly ILibraryManager _libraryManager;
     private readonly IUserManager _userManager;
     private readonly IUserDataManager _userDataManager;
+    private readonly MediaBrowser.Model.Activity.IActivityManager? _activityManager;
 
+    // activityManager is optional so existing construction sites (and tests) keep
+    // working; the server's DI supplies the real one, and a null just skips the
+    // auth-breaker admin notification, never the breaker itself.
     public LetterboxdSyncRunner(
         ILoggerFactory loggerFactory,
         ILibraryManager libraryManager,
         IUserManager userManager,
-        IUserDataManager userDataManager)
+        IUserDataManager userDataManager,
+        MediaBrowser.Model.Activity.IActivityManager? activityManager = null)
     {
+        _activityManager = activityManager;
         _loggerFactory = loggerFactory;
         _logger = loggerFactory.CreateLogger<LetterboxdSyncRunner>();
         _libraryManager = libraryManager;
@@ -275,6 +281,26 @@ public class LetterboxdSyncRunner
             return;
         }
 
+        var breakerUserId = user.Id.ToString("N");
+        if (AuthBreaker.IsOpen(breakerUserId, account.LetterboxdUsername))
+        {
+            var since = AuthBreaker.GetState(breakerUserId, account.LetterboxdUsername)?.FirstFailureUtc;
+            _logger.LogInformation(
+                "Skipping Letterboxd sync for {Username}: auth breaker open (login failing since {Since:u}); re-save credentials to resume",
+                account.LetterboxdUsername, since);
+            SyncHistory.Record(new SyncEvent
+            {
+                FilmTitle = $"Account {account.LetterboxdUsername} paused",
+                Username = user.Username ?? string.Empty,
+                Timestamp = DateTime.UtcNow,
+                Status = SyncStatus.Skipped,
+                Error = $"Login failing since {since:yyyy-MM-dd}; sync paused until credentials are re-saved",
+                Source = source
+            });
+            SyncProgress.Complete(SyncProgress.TrackLetterboxd);
+            return;
+        }
+
         ILetterboxdService service;
         try
         {
@@ -289,9 +315,13 @@ public class LetterboxdSyncRunner
             // so telemetry needs its own hook here. Classify rather than hardcode auth:
             // a Cloudflare 403 on /sign-in/ should count as cloudflare, not auth.
             TelemetryService.RecordError(TelemetryService.Classify(ex.Message));
+            if (AuthBreaker.RecordFailure(breakerUserId, account.LetterboxdUsername, ex.Message))
+                await AuthBreaker.NotifyOpenedAsync(_activityManager, user.Id, account.LetterboxdUsername, _logger).ConfigureAwait(false);
             SyncProgress.Complete(SyncProgress.TrackLetterboxd);
             return;
         }
+
+        AuthBreaker.RecordSuccess(breakerUserId, account.LetterboxdUsername);
 
         using var _ = service;
 

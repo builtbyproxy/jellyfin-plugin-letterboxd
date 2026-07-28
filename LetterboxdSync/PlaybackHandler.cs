@@ -19,15 +19,20 @@ public class PlaybackHandler : IHostedService, IDisposable
     private readonly ISessionManager _sessionManager;
     private readonly IUserDataManager _userDataManager;
     private readonly ILogger<PlaybackHandler> _logger;
+    private readonly MediaBrowser.Model.Activity.IActivityManager? _activityManager;
 
+    // activityManager is optional so existing construction sites (and tests) keep
+    // working; a null only skips the auth-breaker admin notification.
     public PlaybackHandler(
         ISessionManager sessionManager,
         IUserDataManager userDataManager,
-        ILogger<PlaybackHandler> logger)
+        ILogger<PlaybackHandler> logger,
+        MediaBrowser.Model.Activity.IActivityManager? activityManager = null)
     {
         _sessionManager = sessionManager;
         _userDataManager = userDataManager;
         _logger = logger;
+        _activityManager = activityManager;
     }
 
     private static PluginConfiguration Config => Plugin.Instance!.Configuration;
@@ -100,14 +105,52 @@ public class PlaybackHandler : IHostedService, IDisposable
 
             foreach (var account in accounts)
             {
+                var breakerUserId = user.Id.ToString("N");
+                if (AuthBreaker.IsOpen(breakerUserId, account.LetterboxdUsername))
+                {
+                    _logger.LogInformation(
+                        "Skipping real-time sync of {Title} for {LbUser}: auth breaker open; the scheduled task catches up once credentials are re-saved",
+                        e.Item.Name, account.LetterboxdUsername);
+                    continue;
+                }
+
                 _logger.LogInformation("Syncing {Title} (TMDb:{TmdbId}) to Letterboxd for {Username} as {LbUser}",
                     e.Item.Name, tmdbId, user.Username, account.LetterboxdUsername);
 
+                // Authentication gets its own try/catch so only genuine login failures
+                // feed the breaker; errors later in the sync (lookups, Cloudflare) fall
+                // through to the existing catch below and never count against auth.
+                ILetterboxdService authedService;
                 try
                 {
-                    using var service = await LetterboxdServiceFactory.CreateAuthenticatedAsync(
+                    authedService = await LetterboxdServiceFactory.CreateAuthenticatedAsync(
                         account.LetterboxdUsername, account.LetterboxdPassword, account.RawCookies, _logger, account.UserAgent)
                         .ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError("Auth failed for {Username} as {LbUser}: {Message}",
+                        user.Username, account.LetterboxdUsername, ex.Message);
+                    SyncHistory.Record(new SyncEvent
+                    {
+                        FilmTitle = e.Item.Name,
+                        TmdbId = tmdbId,
+                        Username = user.Username,
+                        Timestamp = DateTime.UtcNow,
+                        Status = SyncStatus.Failed,
+                        Error = ex.Message,
+                        Source = "playback"
+                    });
+                    if (AuthBreaker.RecordFailure(breakerUserId, account.LetterboxdUsername, ex.Message))
+                        await AuthBreaker.NotifyOpenedAsync(_activityManager, user.Id, account.LetterboxdUsername, _logger).ConfigureAwait(false);
+                    continue;
+                }
+
+                AuthBreaker.RecordSuccess(breakerUserId, account.LetterboxdUsername);
+
+                try
+                {
+                    using var service = authedService;
 
                     var film = await service.LookupFilmByTmdbIdAsync(tmdbId).ConfigureAwait(false);
                     var viewingDate = DateTime.Now.Date;
