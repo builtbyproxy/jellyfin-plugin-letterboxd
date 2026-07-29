@@ -25,13 +25,14 @@ New `ILetterboxdService.SetFilmRatingAsync(filmSlug, filmId, rating)`:
 - `ScrapingLetterboxdService`: the site's own rate widget posts a CSRF-protected rate action; probe and mirror it in `LetterboxdDiary`/`LetterboxdScraper` composition.
 Both implementations must be verified against a real account before the handler lands (the factory's silent fallback means either path can serve any user).
 
-**3. Echo prevention: save-reason first, then a suppression handshake for our own writeback.**
-- `DiaryImportTask` saves with `Import` → filtered out by save reason alone.
-- The review-modal writeback saves with `UpdateUserRating` (indistinguishable from a client). Add an internal static `RatingSyncSuppression` scope (e.g. `IDisposable` marking (userId, itemId) as self-inflicted for a few seconds); `WriteJellyfinRating` wraps its save in it, the handler checks it. Re-pushing would usually be harmless (same value, idempotent) but wastes a login and can double-log under scraping; suppression is cheap and testable.
-- A rating arriving FROM Letterboxd via diary import therefore never bounces back — no cross-system loop is possible because the only Letterboxd→Jellyfin write path uses `Import`.
+**3. Echo prevention: one rule — only `UpdateUserRating` saves stream.**
+Both plugin-originated rating writes save with `UserDataSaveReason.Import`:
+- `DiaryImportTask` already does.
+- The review-modal writeback (`WriteJellyfinRating`) currently saves with `UpdateUserRating`; this change switches it to `Import`, which is semantically accurate (in both cases the value originates from the Letterboxd side — the review post already carried it there). One pattern for every current and future plugin-originated rating write; a suppression handshake was considered and rejected as a second mechanism for the same concern.
+- No cross-system loop is possible: every Letterboxd→Jellyfin write path now uses `Import`, and the handler streams only `UpdateUserRating`. Regression guard: a test pins the writeback's save reason so a future edit can't silently reopen the loop.
 
-**4. Debounce: trailing-edge, per (user, item), ~10 seconds.**
-Clients like Infuse let users tap through star values; each tap fires a save. The handler keeps a small in-memory map of pending pushes and (re)arms a timer per key; only the final value is sent. No persistence: a server restart mid-debounce loses at most one rating tap, and the next change re-triggers. Same in-memory-static trade-off as `SyncGate`, accepted knowingly.
+**4. Debounce: trailing-edge, per (user, item), 10 seconds exactly.**
+Clients like Infuse let users tap through star values; each tap fires a save. The handler keeps an in-memory `ConcurrentDictionary<(Guid,Guid), PendingPush>`; each event overwrites the pending value and restarts that key's `System.Threading.Timer` at 10s; the timer callback pushes the value present at fire time and removes the key. Only the final value is ever sent. No persistence: a server restart mid-window loses at most one rating tap, and the next change re-triggers. Same in-memory-static trade-off as `SyncGate`, accepted knowingly. 10s balances Letterboxd request economy against perceived staleness; it is a named constant, not config.
 
 **5. Gating order: toggle → breaker → auth.**
 Skip silently when `SyncRatings` is off. Skip with an Information log when the breaker is open (no history spam per rating tap). On auth failure, `AuthBreaker.RecordFailure` + notify exactly as the other four entry points do — this becomes the fifth guarded call site, same pattern. On success, record a `SyncEvent` (`Source = "rating"`) so the dashboard activity shows "Rated <film> 3.5 stars on Letterboxd".
@@ -53,4 +54,8 @@ Additive. New `SyncRatings` account field defaults to true (XML deserialization 
 
 ## Open Questions
 
-- Official API rating endpoint shape (resolved by the ordered research task, not blocking the proposal).
+- Official API rating endpoint shape. HARD GATE: task group 1 must conclude before the service surface is written; if the official API cannot set a member film rating, the API client's implementation throws NotSupported and the factory's scraping fallback carries the feature (documented in the release notes as requiring a working scraping login).
+
+## Alternatives considered
+
+- **Poll-based rating sync inside SyncTask** (plan-review suggestion): scan rated items each scheduled run and push un-pushed ratings. Rejected: latency becomes the sync interval (hours) for a feature whose whole point is "rate on the couch, see it on Letterboxd", it needs new pushed-rating bookkeeping to know what is already on Letterboxd, and the event path's complexity collapsed once echo prevention unified on save reasons. Revisit as a catch-up complement if event delivery proves unreliable.

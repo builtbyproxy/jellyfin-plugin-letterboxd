@@ -18,7 +18,7 @@ When a Jellyfin user's rating on a movie changes with save reason UpdateUserRati
 - **THEN** nothing is pushed for that account, while other enabled accounts of the same user still receive the rating
 
 ### Requirement: The plugin's own rating writes never echo back out
-Rating saves originating from the plugin itself SHALL NOT be streamed: diary-import saves (Import reason) are ignored by reason, and the review-modal writeback is suppressed via an explicit handshake even though it saves with UpdateUserRating.
+Rating saves originating from the plugin itself SHALL NOT be streamed. All plugin-originated rating writes (diary import and the review-modal writeback) SHALL save with the Import reason, and the handler SHALL stream only UpdateUserRating saves.
 
 #### Scenario: Diary import does not bounce
 - **WHEN** diary import writes a Letterboxd rating into Jellyfin
