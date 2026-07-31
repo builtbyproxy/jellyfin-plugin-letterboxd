@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "2.3.0.0",
+        "changelog": "When a Letterboxd password goes stale, the plugin no longer retries the login forever. After three consecutive failed logins, syncing for that account pauses itself: no more login attempts (protecting you from Letterboxd rate limiting), a warning appears in Jellyfin's activity log where admins actually look, and the account card in both dashboards shows a \"login failing\" badge with the date it started. Re-save the account's credentials and syncing resumes on the next run; watches from the paused period are picked up by the scheduled catch-up, so nothing is lost.",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://lbsync-telemetry.lachlanbyoung.workers.dev/dl/v2.3.0/jellyfin-plugin-letterboxd-v2.3.0.zip",
+        "checksum": "89655e69592bfef11fdf77ea97a24b7f",
+        "timestamp": "2026-07-31T02:41:27Z"
+      },
+      {
         "version": "2.2.0.0",
         "changelog": "The review modal now shows the rating you already gave. Instead of always opening at \"No rating\", it looks up the rating stored in Jellyfin, whether you set it in the Jellyfin web UI, a client app like Infuse, or an earlier Jellyscribe review, and pre-fills the stars for you, for films, shows, and individual episodes. The star widget also supports half stars now: click the left half of a star for a .5 rating, matching what Letterboxd itself accepts, so a 7/10 in Jellyfin finally displays as the 3.5 stars it really is.",
         "targetAbi": "10.11.9.0",
