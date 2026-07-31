@@ -10,6 +10,20 @@ export type ReleaseNotes = {
 
 export const releaseNotes: ReleaseNotes[] = [
   {
+    version: '2.3.0',
+    headline: 'Broken Letterboxd logins now pause themselves and tell you about it',
+    summary:
+      'When a Letterboxd password went stale, the plugin used to retry the login on every scheduled run, forever, and the only place you could find out was the plugin\'s own dashboard. On a set-and-forget server that meant weeks of silent failures, and the constant retries could even trip Letterboxd\'s rate limiting for accounts that still worked. Now, after three consecutive failed logins, syncing for that account pauses itself: no more login attempts, a warning lands in Jellyfin\'s activity log where admins actually look, and the account card in both dashboards shows a "login failing" badge. Re-save the account\'s credentials and syncing resumes on the next run, and nothing is lost in the meantime, the scheduled catch-up picks up any watches from while it was paused.',
+    highlights: {
+      new: [
+        'After three consecutive failed Letterboxd logins, syncing for that account pauses automatically instead of retrying forever, protecting you from rate limiting.',
+        'The pause is announced in Jellyfin\'s activity log, so admins see it without opening the plugin dashboard.',
+        'Account cards on both the admin and user pages show a "Login failing · sync paused" badge with the date it started.',
+        'Re-saving the account\'s credentials (or any successful login) resumes syncing; watches from the paused period are picked up by the next catch-up run.',
+      ],
+    },
+  },
+  {
     version: '2.2.0',
     headline: 'The review modal now shows the rating you already gave, and stars come in halves',
     summary:

@@ -19,13 +19,18 @@ public class DiaryImportTask : IScheduledTask
     private readonly ILibraryManager _libraryManager;
     private readonly IUserManager _userManager;
     private readonly IUserDataManager _userDataManager;
+    private readonly MediaBrowser.Model.Activity.IActivityManager? _activityManager;
 
+    // activityManager is optional so existing construction sites (and tests) keep
+    // working; a null only skips the auth-breaker admin notification.
     public DiaryImportTask(
         IUserManager userManager,
         ILoggerFactory loggerFactory,
         ILibraryManager libraryManager,
-        IUserDataManager userDataManager)
+        IUserDataManager userDataManager,
+        MediaBrowser.Model.Activity.IActivityManager? activityManager = null)
     {
+        _activityManager = activityManager;
         _logger = loggerFactory.CreateLogger<DiaryImportTask>();
         _userManager = userManager;
         _libraryManager = libraryManager;
@@ -87,6 +92,15 @@ public class DiaryImportTask : IScheduledTask
 
             foreach (var account in accounts)
             {
+                var breakerUserId = user.Id.ToString("N");
+                if (AuthBreaker.IsOpen(breakerUserId, account.LetterboxdUsername))
+                {
+                    _logger.LogInformation(
+                        "Skipping diary import for {LbUser}: auth breaker open; re-save credentials to resume",
+                        account.LetterboxdUsername);
+                    continue;
+                }
+
                 ILetterboxdService service;
                 try
                 {
@@ -99,8 +113,12 @@ public class DiaryImportTask : IScheduledTask
                     _logger.LogError("Auth failed for {Username} as {LbUser}: {Message}",
                         user.Username, account.LetterboxdUsername, ex.Message);
                     TelemetryService.RecordError(TelemetryService.Classify(ex.Message));
+                    if (AuthBreaker.RecordFailure(breakerUserId, account.LetterboxdUsername, ex.Message))
+                        await AuthBreaker.NotifyOpenedAsync(_activityManager, user.Id, account.LetterboxdUsername, _logger).ConfigureAwait(false);
                     continue;
                 }
+
+                AuthBreaker.RecordSuccess(breakerUserId, account.LetterboxdUsername);
 
                 using var _s = service;
 

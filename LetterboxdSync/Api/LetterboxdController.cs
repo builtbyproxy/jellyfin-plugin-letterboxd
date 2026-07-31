@@ -281,6 +281,24 @@ public class LetterboxdController : JellyfinUserApiController
         });
     }
 
+    /// <summary>
+    /// Open auth breakers across all users, for the admin dashboard's paused badges.
+    /// Admin-only: the payload names other users' Letterboxd accounts.
+    /// </summary>
+    [HttpGet("AuthBreakers")]
+    [Authorize(Policy = "RequiresElevation")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public ActionResult GetAuthBreakers()
+    {
+        var open = AuthBreaker.GetOpenEntries().Select(e => new
+        {
+            userJellyfinId = e.UserJellyfinId,
+            letterboxdUsername = e.LetterboxdUsername,
+            failingSinceUtc = e.FirstFailureUtc
+        });
+        return Ok(new { breakers = open });
+    }
+
     [HttpPut("Account")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
@@ -321,6 +339,11 @@ public class LetterboxdController : JellyfinUserApiController
         Config.NormalisePrimaryFlags();
 
         Plugin.Instance!.SaveConfiguration();
+
+        // Credentials were just (re-)persisted: close any open auth breaker so the
+        // next run attempts login with the new values (issue #103's reset path).
+        AuthBreaker.Reset(userId, account.LetterboxdUsername);
+
         _logger.LogInformation("User {UserId} saved their Letterboxd account settings", userId);
 
         return Ok(new { success = true });
@@ -350,6 +373,8 @@ public class LetterboxdController : JellyfinUserApiController
                 letterboxdPassword = a.LetterboxdPassword,
                 rawCookies = a.RawCookies,
                 userAgent = a.UserAgent,
+                authPaused = AuthBreaker.IsOpen(userId, a.LetterboxdUsername),
+                authPausedSince = AuthBreaker.GetState(userId, a.LetterboxdUsername)?.FirstFailureUtc,
                 enabled = a.Enabled,
                 syncFavorites = a.SyncFavorites,
                 enableDateFilter = a.EnableDateFilter,
@@ -433,6 +458,11 @@ public class LetterboxdController : JellyfinUserApiController
 
         Config.NormalisePrimaryFlags();
         Plugin.Instance!.SaveConfiguration();
+
+        // Credentials were just (re-)persisted for every submitted account: close any
+        // open auth breakers so the next run retries login (issue #103's reset path).
+        foreach (var saved in mine)
+            AuthBreaker.Reset(userId, saved.LetterboxdUsername);
 
         _logger.LogInformation("User {UserId} saved {Count} Letterboxd account(s) via /Accounts", userId, mine.Count);
         return Ok(new { success = true, count = mine.Count });
