@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "2.3.1.0",
+        "changelog": "Films and episodes that Jellyfin marks watched through real playback have always synced with the correct date. But checking a title watched by hand, using the checkmark rather than actually playing it, could leave Jellyfin's own watched-date field set to January 1st 1970 instead of a real date, and the plugin trusted that value as-is. The fix treats an epoch-adjacent watched date the same way it already treats a missing one: there's no real watch date to log yet, so the sync waits rather than posting a bogus entry to Letterboxd or Serializd. Once Jellyfin records an actual playback date for the title, it syncs normally.",
+        "targetAbi": "10.11.9.0",
+        "sourceUrl": "https://lbsync-telemetry.lachlanbyoung.workers.dev/dl/v2.3.1/jellyfin-plugin-letterboxd-v2.3.1.zip",
+        "checksum": "593e28acf23af823a9ed2f5ec91fb43a",
+        "timestamp": "2026-08-12T21:01:03Z"
+      },
+      {
         "version": "2.3.0.0",
         "changelog": "When a Letterboxd password goes stale, the plugin no longer retries the login forever. After three consecutive failed logins, syncing for that account pauses itself: no more login attempts (protecting you from Letterboxd rate limiting), a warning appears in Jellyfin's activity log where admins actually look, and the account card in both dashboards shows a \"login failing\" badge with the date it started. Re-save the account's credentials and syncing resumes on the next run; watches from the paused period are picked up by the scheduled catch-up, so nothing is lost.",
         "targetAbi": "10.11.9.0",
