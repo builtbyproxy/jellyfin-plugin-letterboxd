@@ -181,12 +181,15 @@ public class SerializdSyncRunner
 
             var ud = _userDataManager.GetUserData(user, ep);
 
-            // Skip episodes marked played on Jellyfin with no LastPlayedDate. There's no real
-            // watch date to log: watchedAt would otherwise fall back to DateTime.UtcNow (today),
-            // which drifts forward on every run and re-logs the same episode every catch-up.
-            // This is also the import-then-export loop guard: SerializdDiaryImportRunner marks
-            // episodes played without a LastPlayedDate specifically so they land here.
-            if (ud?.LastPlayedDate.HasValue != true)
+            // Skip episodes marked played on Jellyfin with no plausible LastPlayedDate: either
+            // missing entirely, or an epoch-adjacent value (e.g. 1970-01-01) some clients send
+            // when marking an item watched manually without a real timestamp (issue #106).
+            // There's no real watch date to log: watchedAt would otherwise fall back to
+            // DateTime.UtcNow (today) or literally 1970, which drifts forward on every run and
+            // re-logs the same episode every catch-up. This is also the import-then-export loop
+            // guard: SerializdDiaryImportRunner marks episodes played without a LastPlayedDate
+            // specifically so they land here.
+            if (ud is null || !Helpers.HasPlausibleWatchDate(ud.LastPlayedDate))
             {
                 skippedNoPlayDate++;
                 continue;
@@ -205,7 +208,7 @@ public class SerializdSyncRunner
 
         if (skippedNoPlayDate > 0)
             _logger.LogInformation(
-                "Serializd catch-up: skipping {Count} episodes for {Username}: marked played but no LastPlayedDate (no real watch date to log)",
+                "Serializd catch-up: skipping {Count} episodes for {Username}: marked played but no plausible LastPlayedDate (no real watch date to log)",
                 skippedNoPlayDate, user.Username);
 
         // Date filter: limit the catch-up to episodes watched within the look-back window.

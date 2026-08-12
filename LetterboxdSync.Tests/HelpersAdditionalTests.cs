@@ -91,6 +91,28 @@ public class HelpersAdditionalTests
     }
 
     [Fact]
+    public void HasPlausibleWatchDate_Null_False()
+    {
+        Assert.False(Helpers.HasPlausibleWatchDate(null));
+    }
+
+    [Fact]
+    public void HasPlausibleWatchDate_UnixEpoch_False()
+    {
+        // issue #106: manually marking watched can leave LastPlayedDate at an
+        // epoch-adjacent value instead of null.
+        Assert.False(Helpers.HasPlausibleWatchDate(new DateTime(1970, 1, 1)));
+        Assert.False(Helpers.HasPlausibleWatchDate(DateTime.UnixEpoch));
+    }
+
+    [Fact]
+    public void HasPlausibleWatchDate_RealWatchDate_True()
+    {
+        Assert.True(Helpers.HasPlausibleWatchDate(DateTime.Today));
+        Assert.True(Helpers.HasPlausibleWatchDate(new DateTime(1971, 1, 1)));
+    }
+
+    [Fact]
     public void ParseDiaryDates_EmptyHtml_ReturnsEmpty()
     {
         Assert.Empty(Helpers.ParseDiaryDates("<html></html>"));

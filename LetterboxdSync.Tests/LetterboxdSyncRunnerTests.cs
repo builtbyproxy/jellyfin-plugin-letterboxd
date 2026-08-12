@@ -436,6 +436,45 @@ public class LetterboxdSyncRunnerTests : IDisposable
         Assert.False(factoryHit);
     }
 
+    // ----- Epoch LastPlayedDate suppression (issue #106) -----
+
+    [Fact]
+    public async Task TryRunForUserAsync_ManuallyMarkedPlayedWithEpochLastPlayedDate_DoesNotExportToLetterboxd()
+    {
+        // The bug: marking a film watched via the Jellyfin checkmark (rather than real
+        // playback) can leave LastPlayedDate set to an epoch-adjacent value like 1970-01-01
+        // instead of null, which slips past a plain HasValue check and gets logged to
+        // Letterboxd as "seen on 1970-01-01".
+        var (user, userId) = MakeUser("lachlan");
+        _userManager.GetUsers().Returns(new[] { user });
+        AddAccount(userId);
+
+        var movie = MakeMovie(1233413);
+        _libraryManager.GetItemList(Arg.Any<InternalItemsQuery>()).Returns(new List<BaseItem> { movie });
+
+        var manuallyMarkedUserData = new UserItemData
+        {
+            Key = "k",
+            Played = true,
+            LastPlayedDate = new DateTime(1970, 1, 1)
+        };
+        _userDataManager.GetUserData(user, movie).Returns(manuallyMarkedUserData);
+
+        var factoryHit = false;
+        LetterboxdServiceFactory.OverrideForTesting = (_, _, _, _, _) =>
+        {
+            factoryHit = true;
+            return Task.FromResult(Substitute.For<ILetterboxdService>());
+        };
+
+        var ok = await _runner.TryRunForUserAsync(userId, "scheduled",
+            new Progress<double>(), CancellationToken.None);
+
+        Assert.True(ok);
+        // Filter eliminated the only candidate, so the runner exits before authenticating.
+        Assert.False(factoryHit);
+    }
+
     [Fact]
     public async Task TryRunForUserAsync_DiaryImportedFilmThenActuallyPlayed_StillExportsToLetterboxd()
     {

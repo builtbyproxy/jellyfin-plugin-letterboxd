@@ -142,6 +142,26 @@ public class SerializdSyncRunnerCatchUpTests : IDisposable
     }
 
     [Fact]
+    public async Task Run_EpisodePlayedWithEpochLastPlayedDate_NeverLogged()
+    {
+        // A manual checkmark can leave LastPlayedDate at an epoch-adjacent value like
+        // 1970-01-01 instead of null (issue #106). That's non-null, so it must not slip
+        // past the guard that also catches the null case above.
+        var (user, idHex) = AddUserWithAccount();
+        var ep = MakeEpisode(1, 3);
+        LibraryHas(ep);
+        _userDataManager.GetUserData(user, ep).Returns(MakeUserData(new DateTime(1970, 1, 1)));
+        var service = FakeService(out var logged);
+
+        await _runner.RunForAllAsync(new Progress<double>(), "test", CancellationToken.None);
+
+        Assert.Empty(logged);
+        await service.DidNotReceive().CreateEpisodeLogAsync(
+            Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<DateTime>(), Arg.Any<int?>(), Arg.Any<bool>());
+        Assert.False(SerializdSyncHistory.Has(idHex, "user@example.com", ShowTmdbId, 1, 3, SerializdSyncHistory.KindLog));
+    }
+
+    [Fact]
     public async Task Run_EpisodePlayedWithLastPlayedDate_LoggedOnce()
     {
         var (user, idHex) = AddUserWithAccount();
