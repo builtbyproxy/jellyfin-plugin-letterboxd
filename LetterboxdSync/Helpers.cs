@@ -104,4 +104,19 @@ public static class Helpers
 
         return lastDiaryDate.Value.Date == viewingDate.Date;
     }
+
+    // Some clients send an explicit but bogus datePlayed (e.g. an uninitialized JS Date
+    // defaulting to epoch) when marking an item watched manually without a real timestamp.
+    // That leaves LastPlayedDate non-null, so it slips past a plain HasValue check. No real
+    // Jellyfin server predates this floor, so anything at or before it isn't a genuine watch.
+    private static readonly DateTime EpochFloor = new(1971, 1, 1);
+
+    /// <summary>
+    /// Whether a Jellyfin LastPlayedDate looks like a genuine watch instant rather than a
+    /// missing or degenerate one (null, or epoch-adjacent e.g. 1970-01-01, see issue #106).
+    /// </summary>
+    public static bool HasPlausibleWatchDate(DateTime? lastPlayedDate)
+    {
+        return lastPlayedDate.HasValue && lastPlayedDate.Value >= EpochFloor;
+    }
 }

@@ -192,24 +192,27 @@ public class LetterboxdSyncRunner
             return;
         }
 
-        // Skip films marked played on Jellyfin that have no LastPlayedDate. There's no real
-        // watch date to log: viewingDate would otherwise fall back to DateTime.Now (today),
-        // which drifts forward on every run and slips past every same-date duplicate check,
-        // posting a phantom rewatch to Letterboxd roughly every other day. Wait until Jellyfin
-        // records an actual play date. This also closes the import-then-export loop from
-        // issue #32, DiaryImportTask marks films played without a LastPlayedDate.
+        // Skip films marked played on Jellyfin with no plausible LastPlayedDate: either
+        // missing entirely, or an epoch-adjacent value (e.g. 1970-01-01) some clients send
+        // when marking an item watched manually without a real timestamp (issue #106). In
+        // either case there's no real watch date to log: viewingDate would otherwise fall
+        // back to DateTime.Now (today) or literally 1970, which drifts forward on every run
+        // and slips past every same-date duplicate check, posting a phantom rewatch to
+        // Letterboxd roughly every other day. Wait until Jellyfin records an actual play
+        // date. This also closes the import-then-export loop from issue #32, DiaryImportTask
+        // marks films played without a LastPlayedDate.
         var skippedNoPlayDate = 0;
         movies = movies.Where(m =>
         {
             var ud = _userDataManager.GetUserData(user, m);
-            if (ud?.LastPlayedDate.HasValue == true) return true;
+            if (Helpers.HasPlausibleWatchDate(ud?.LastPlayedDate)) return true;
             skippedNoPlayDate++;
             return false;
         }).ToList();
 
         if (skippedNoPlayDate > 0)
             _logger.LogInformation(
-                "Skipping {Count} films for {Username}: marked played but no LastPlayedDate (no real watch date to log)",
+                "Skipping {Count} films for {Username}: marked played but no plausible LastPlayedDate (no real watch date to log)",
                 skippedNoPlayDate, user.Username);
 
         if (movies.Count == 0)

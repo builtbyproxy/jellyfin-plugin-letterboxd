@@ -10,6 +10,18 @@ export type ReleaseNotes = {
 
 export const releaseNotes: ReleaseNotes[] = [
   {
+    version: '2.3.1',
+    headline: 'Manually marking something watched no longer logs it to 1970',
+    summary:
+      'Films and episodes that Jellyfin marks watched through real playback have always synced with the correct date. But checking a title watched by hand, using the checkmark rather than actually playing it, could leave Jellyfin\'s own watched-date field set to January 1st 1970 instead of a real date, and the plugin trusted that value as-is. The fix treats an epoch-adjacent watched date the same way it already treats a missing one: there\'s no real watch date to log yet, so the sync waits rather than posting a bogus entry to Letterboxd or Serializd. Once Jellyfin records an actual playback date for the title, it syncs normally.',
+    highlights: {
+      fixes: [
+        'Manually marking a film or episode watched no longer risks logging it to Letterboxd or Serializd with a "seen on 1970-01-01" date.',
+        'Titles affected by this are simply skipped (not synced with a fabricated date) until Jellyfin records a real watch date, matching how the plugin already handles a missing watched date.',
+      ],
+    },
+  },
+  {
     version: '2.3.0',
     headline: 'Broken Letterboxd logins now pause themselves and tell you about it',
     summary:
